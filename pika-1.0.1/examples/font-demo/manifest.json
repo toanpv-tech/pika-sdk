@@ -1,0 +1,13 @@
+{
+  "sdk": "1.0.1",
+  "version": "0.1.0",
+  "display_name": "Font Demo",
+  "entry_script": "scripts/main.lua",
+  "input": {
+    "actions": {
+      "left":  ["button:left"],
+      "right": ["button:right"],
+      "fire":  ["button:enter"]
+    }
+  }
+}
