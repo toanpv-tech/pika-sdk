@@ -1,7 +1,6 @@
 # Pika SDK repo ignore.
 # Keep the source .zip archives + tooling + generated index; ignore the large
 # extracted per-pack folders (regenerate with assets/unzip_assets.sh).
-assets/*/*/
 
 # OS / editor cruft
 .DS_Store
