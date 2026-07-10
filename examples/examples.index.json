@@ -1,0 +1,10 @@
+{
+  "schema": "pika-sdk-examples/1",
+  "note": "Game mẫu chạy được. Tool copy vào vùng làm việc khi Open; Export sẽ regen s.json.",
+  "examples": [
+    { "dir": "test_button", "name": "Button Stress Test", "demonstrates": ["input", "text"], "summary": "Nhập 3 nút + Text pool. Nhẹ nhất, không cần codec — điểm khởi đầu tốt." },
+    { "dir": "test_font",   "name": "Font Demo",          "demonstrates": ["text", "font"], "summary": "Text với font TTF runtime, nhiều cỡ." },
+    { "dir": "test_voice",  "name": "Voice Probe",         "demonstrates": ["voice"], "summary": "Voice keyword-spotting: set_keywords + start, xử lý on_voice_event." },
+    { "dir": "test_audio",  "name": "Audio Stress Test",   "demonstrates": ["speaker"], "summary": "Speaker: play/stop/preempt, loop, on_sound_end, volume." }
+  ]
+}

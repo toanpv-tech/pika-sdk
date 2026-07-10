@@ -1,0 +1,13 @@
+{
+  "schema": "pika-sdk-docs/1",
+  "entry": "getting-started.md",
+  "docs": [
+    { "file": "getting-started.md", "title": "Bắt đầu nhanh", "summary": "Cài tool → mở game mẫu → Run → sửa → Export. Đọc đầu tiên." },
+    { "file": "overview.md", "title": "Tổng quan", "summary": "Bức tranh engine cho đội làm game: vòng đời, mô hình frame, ràng buộc." },
+    { "file": "guide.md",    "title": "Hướng dẫn viết Game Pack", "summary": "Từng bước dựng một game pack Lua: manifest, entry script, hook." },
+    { "file": "api.md",      "title": "Tham chiếu API Lua", "summary": "Toàn bộ binding: Engine, Text, Sprite, Input, Speaker, Voice, State, Timer." },
+    { "file": "module.md",   "title": "Module Firmware", "summary": "Các module engine phía firmware (tham khảo, không cần cho người viết game)." },
+    { "file": "monitor.md",  "title": "Monitor — Keyword", "summary": "Từ khoá log để chẩn đoán khi chạy trên board." },
+    { "file": "README.md",   "title": "Mục lục tài liệu", "summary": "Điểm vào, liên kết tới các tài liệu còn lại." }
+  ]
+}

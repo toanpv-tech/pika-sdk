@@ -1,0 +1,18 @@
+{
+  "version": "0.1.0",
+  "display_name": "Minimal Game",
+  "entry_script": "scripts/main.lua",
+  "input": {
+    "actions": {
+      "enter": ["button:enter"],
+      "left":  ["button:left"],
+      "right": ["button:right"]
+    }
+  },
+  "assets": {
+    "sprites": [],
+    "audio": {
+      "sounds": {}
+    }
+  }
+}

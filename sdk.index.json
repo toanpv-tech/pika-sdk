@@ -1,0 +1,40 @@
+{
+  "schema": "pika-sdk/1",
+  "sdk_version": "1.0.2",
+  "name": "Pika SDK",
+  "description": "Kho thông tin hỗ trợ cho Pika Studio: assets, docs, thư viện Lua và game mẫu. Repo độc lập, addon vào tool qua git URL (pika.sdk.source).",
+  "engine_api": {
+    "min": "1.0.2",
+    "note": "Version hợp đồng API mà SDK này viết theo. Tool so với version firmware báo lúc chạy và cảnh báo (mềm) nếu lệch."
+  },
+  "sections": {
+    "assets": {
+      "path": "assets",
+      "index": "assets/assets.index.json",
+      "kind": "asset-library",
+      "description": "Pack sprite/audio (Kenney) phân theo 2D/3D/Audio/Pixel/Textures/UI.",
+      "tools": {
+        "unzip": "assets/unzip_assets.sh",
+        "gen_index": "assets/gen_assets_index.sh"
+      }
+    },
+    "docs": {
+      "path": "docs",
+      "index": "docs/docs.index.json",
+      "kind": "documentation",
+      "description": "Tham chiếu API engine + hướng dẫn bắt đầu."
+    },
+    "libraries": {
+      "path": "libraries",
+      "index": "libraries/libs.index.json",
+      "kind": "lua-library",
+      "description": "Thư viện Lua chuẩn (bản gốc). Công cụ tạo game copy từ đây vào game/libs."
+    },
+    "examples": {
+      "path": "examples",
+      "index": "examples/examples.index.json",
+      "kind": "game-pack",
+      "description": "Game mẫu chạy được, mỗi cái minh hoạ một mảng của engine."
+    }
+  }
+}

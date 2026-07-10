@@ -1,0 +1,17 @@
+{
+  "schema": "pika-sdk-libs/1",
+  "note": "Bản gốc thư viện Lua. Công cụ tạo game copy module (kèm phụ thuộc) vào game/libs/. Đường require trong game giữ prefix libs/.",
+  "modules": [
+    { "file": "fsm.lua",         "require": "libs/fsm",         "title": "Finite state machine", "summary": "Máy trạng thái hữu hạn cho luồng game." },
+    { "file": "animator.lua",    "require": "libs/animator",    "title": "Animator", "summary": "Tween/easing cho chuyển động Sprite." },
+    { "file": "ui.lua",          "require": "libs/ui",          "title": "UI", "summary": "Selector + xác nhận yes/no 1 dòng, qua Text." },
+    { "file": "settings.lua",    "require": "libs/settings",    "title": "Pre-game settings", "summary": "Màn cài đặt trước khi chơi (Start + tunables), 3 nút, push qua on_start(cfg)." },
+    { "file": "save.lua",        "require": "libs/save",        "title": "Save", "summary": "Lưu trạng thái per-game (single-slot) trên State." },
+    { "file": "testkit.lua",     "require": "libs/testkit",     "title": "Test kit", "summary": "Harness test tối thiểu chạy phía game." },
+    { "file": "math/easing.lua", "require": "libs/math/easing", "title": "Easing", "summary": "Đường cong easing [0..1] → [0..1]." },
+    { "file": "math/lerp.lua",   "require": "libs/math/lerp",   "title": "Lerp", "summary": "lerp + clamp." },
+    { "file": "math/vec2.lua",   "require": "libs/math/vec2",   "title": "Vec2", "summary": "Vector 2D." },
+    { "file": "util/str.lua",    "require": "libs/util/str",    "title": "String utils", "summary": "Tiện ích chuỗi." },
+    { "file": "util/tbl.lua",    "require": "libs/util/tbl",    "title": "Table utils", "summary": "Tiện ích bảng." }
+  ]
+}

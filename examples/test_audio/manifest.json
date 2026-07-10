@@ -1,0 +1,34 @@
+{
+  "version": "0.3.0",
+  "display_name": "Audio Stress Test",
+  "entry_script": "scripts/main.lua",
+  "input": {
+    "actions": {
+      "fire": ["button:enter"],
+      "prev": ["button:left"],
+      "next": ["button:right"]
+    }
+  },
+  "audio": {
+    "sounds": {
+      "sfx":       { "path": "assets/audio/output.wav" },
+      "clip":      { "path": "assets/audio/en_home.mp3" },
+      "long":      { "path": "assets/audio/en_greeting.mp3" },
+      "loopclip":  { "path": "assets/audio/en_home.mp3", "loop": true },
+
+      "home":      { "path": "assets/audio/en_home.mp3" },
+      "greeting":  { "path": "assets/audio/en_greeting.mp3" },
+      "glitch":    { "path": "assets/audio/en_glitch.mp3" },
+      "glitch2":   { "path": "assets/audio/en_glitch_again.mp3" },
+      "let_learn": { "path": "assets/audio/en_let_learn.mp3" },
+      "lost_wifi": { "path": "assets/audio/lost_wifi_signal.mp3" },
+      "sleep":     { "path": "assets/audio/prepare_to_sleep.mp3" },
+      "error":     { "path": "assets/audio/en_error.mp3" }
+    },
+    "volume": 70
+  },
+  "assets": {
+    "sprites": [],
+    "audio": []
+  }
+}

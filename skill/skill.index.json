@@ -1,0 +1,30 @@
+{
+  "schema": "pika-sdk-skill/1",
+  "name": "Vibe-code a Pika game",
+  "description": "Machine-first knowledge pack: mọi thứ một AI cần để sinh ra một game Pika chạy được ngay trên engine thật, không bịa API. Đọc SKILL.md trước.",
+  "engine_api": { "min": "1.0.0" },
+  "entry": "SKILL.md",
+  "files": [
+    { "file": "SKILL.md",          "title": "Cách vibe-code một game Pika", "role": "entry",       "summary": "Điểm vào. Luật vàng, luồng làm việc, khuôn game tối thiểu, trỏ tới các file còn lại." },
+    { "file": "workflow.md",       "title": "Quy trình ý tưởng → game (cho người)", "role": "human-guide", "summary": "6 bước cho người có ý tưởng dùng AI vibe-code: brief, đưa skill cho AI, copy example, Run hot-reload, export. Kèm mẫu prompt điền-vào-chỗ-trống." },
+    { "file": "start-prompt.md",   "title": "Prompt bắt đầu vibe-code (đã có PRD)", "role": "human-guide", "summary": "Prompt copy-dán khi đã có file PRD: ép AI đọc skill/ trước (kể cả từ project mới qua git URL/local), đọc PRD, hỏi lại map về ràng buộc engine rồi mới code." },
+    { "file": "api-contract.md",   "title": "API Contract",                 "role": "reference",   "summary": "Danh sách API TỒN TẠI (signature + ràng buộc) + API KHÔNG tồn tại. Nguồn chống-bịa." },
+    { "file": "constraints.md",    "title": "Hard Constraints",             "role": "reference",   "summary": "Giới hạn cứng của engine: pool, kích thước, timing, sandbox. Vi phạm = crash/fail-close." },
+    { "file": "pitfalls.md",       "title": "Pitfalls",                     "role": "reference",   "summary": "Fail-mode đã gặp thật → fix một dòng. Đọc trước khi debug." }
+  ],
+  "recipes": {
+    "path": "recipes",
+    "items": [
+      { "file": "recipes/move-a-sprite.md",       "title": "Di chuyển sprite theo nút" },
+      { "file": "recipes/play-sound-on-hit.md",    "title": "Phát tiếng khi va chạm" },
+      { "file": "recipes/voice-keyword-trigger.md","title": "Kích hoạt bằng lệnh giọng nói" },
+      { "file": "recipes/settings-menu.md",        "title": "Menu cài đặt trước khi vào game" }
+    ]
+  },
+  "templates": {
+    "path": "templates",
+    "items": [
+      { "dir": "minimal-game", "title": "Game tối thiểu chạy được", "entry": "scripts/main.lua" }
+    ]
+  }
+}

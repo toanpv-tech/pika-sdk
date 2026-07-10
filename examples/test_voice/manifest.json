@@ -1,0 +1,16 @@
+{
+  "version": "0.1.0",
+  "display_name": "Voice Probe",
+  "entry_script": "scripts/main.lua",
+  "input": {
+    "actions": {
+      "fire": ["button:enter"],
+      "prev": ["button:left"],
+      "next": ["button:right"]
+    }
+  },
+  "assets": {
+    "sprites": [],
+    "audio": []
+  }
+}
