@@ -13,7 +13,6 @@ libs/
 ├── animator.lua       # require("libs/animator")   — tween/easing cho Sprite
 ├── ui.lua             # require("libs/ui")         — selector + confirm (1-dòng, qua Text)
 ├── settings.lua       # require("libs/settings")   — màn cài đặt pre-game (Start + tunables), push qua on_start(cfg)
-├── save.lua           # require("libs/save")       — single-slot per-game persistence
 ├── testkit.lua        # require("libs/testkit")    — test harness game-side
 ├── math/              # require("libs/math/<mod>") — easing, lerp, vec2
 └── util/              # require("libs/util/<mod>") — str, tbl

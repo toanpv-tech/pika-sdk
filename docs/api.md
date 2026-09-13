@@ -3,7 +3,7 @@
 > **Đối tượng:** Người viết game pack — tra cứu nhanh từng hàm Lua.
 > **Tài liệu kèm:** [Guide](guide.md) (quickstart, manifest, vòng đời, sandbox) · [Module Firmware](module.md) (kiến trúc nội bộ).
 
-Engine expose ~60 hàm Lua qua các bảng global: `Engine`, `State`, `Timer`, `Text`, `Input`, `Sprite`, `Anim`, `Speaker`, `Servo`, `Led`, `Voice`, `print`.
+Engine expose ~60 hàm Lua qua các bảng global: `Engine`, `Timer`, `Text`, `Input`, `Sprite`, `Anim`, `Speaker`, `Servo`, `Led`, `Voice`, `Ranking`, `print`.
 
 ---
 
@@ -16,21 +16,6 @@ Quy ước cột **Lỗi**: `raise` = ném lỗi (pcall bắt, kết thúc hook)
 | Hàm | Trả về | Lỗi | Ghi chú |
 |---|---|---|---|
 | `Engine.exit([reason])` | — | — | Lên lịch dừng game; frame hiện tại chạy nốt. `reason` (string, default `"lua"`) ghi log. |
-
-### `State` — lưu trữ KV / blob (per-game)
-
-KV store sống trong registry 1 phiên; `save/load` ghi xuống `save.sav` trên SD.
-
-| Hàm | Trả về | Lỗi | Ghi chú |
-|---|---|---|---|
-| `State.set(key, value)` | — | — | KV scalar (number/string/bool). |
-| `State.get(key)` | any\|nil | — | |
-| `State.save([blob])` | bool | — | Không arg → serialize bảng KV thành JSON. Có `blob` (string) → ghi verbatim. Vượt 4KB → `false`. |
-| `State.load()` | bool\|string\|nil | — | KV save → repopulate + trả `true`; blob save → trả string; không có → `nil`. |
-| `State.has_save()` | bool | — | Kiểm tra nhẹ cho nút "Continue". |
-| `State.clear()` | bool | — | Xóa save (đã rỗng cũng tính thành công). |
-
-> ⚠️ `State.save` chạm FATFS — chỉ gọi ở checkpoint, **không** trong `on_tick`. Định dạng file: header `PSV1` 12 byte + payload nhị phân (giữ NUL), ghi atomic qua `.tmp` rename ([save_store.c](../../head_esp32/components/game_engine/src/platform/save_store.c)). Trần `CONFIG_GAME_ENGINE_SAVE_MAX_BYTES` = 4096 byte.
 
 ### `Timer`
 
@@ -68,7 +53,7 @@ Hằng: `Input.PRESS=0`, `Input.RELEASE=1`, `Input.REPEAT=2`.
 
 ### `Sprite` — đồ họa 2D (LVGL)
 
-Factory trả `userdata` (metatable `pika.sprite`) hoặc `(nil, msg)`. Gọi method bằng `spr:method(...)`. Tối đa `CONFIG_GAME_ENGINE_MAX_SPRITES` = 32 sprite; ảnh ≤ 480×320.
+Factory trả `userdata` (metatable `pika.sprite`) hoặc `(nil, msg)`. Gọi method bằng `spr:method(...)`. Không có trần số lượng sprite — trần thực tế là PSRAM còn trống; ảnh ≤ 480×320.
 
 **Factory:**
 
@@ -116,7 +101,7 @@ Factory trả userdata (metatable `pika.anim`). Định dạng theo đuôi file 
 
 ### `Speaker` — âm thanh
 
-Alias khai báo trong `manifest.audio.sounds`. Có cooldown engine 80ms giữa 2 lần `play` (vượt → `false`, đếm vào `cooldown_reject`).
+Alias khai báo trong `manifest.audio.sounds`. Có cooldown engine 150ms giữa 2 lần `play` (vượt → `false`, đếm vào `cooldown_reject`).
 
 | Hàm | Trả về | Lỗi | Ghi chú |
 |---|---|---|---|
@@ -174,7 +159,8 @@ Mô hình: game khai **danh sách keyword tiếng Anh**, backend keyword-spottin
 | `Voice.start()` | true \| (nil, "send_failed") | — | bắt đầu stream audio |
 | `Voice.stop()` | bool | — | idempotent |
 | `Voice.is_available()` | bool | — | |
-| `Voice.mode()` | string | — | `"a2a"` khi game chạy trong talk flow, ngược lại `"offline"` |
+
+> Game chạy trong talk flow hay không: đọc `params.is_a2a` trong `game_start` (nguồn duy nhất). `Voice.mode()` đã bị gỡ.
 
 `Voice.set_keywords` **fail-loud** (không cắt cụt). Giới hạn encoder: độ sâu ≤ **4**, số key object ≤ **32**, JSON ≤ **2048 byte** (tính cả NUL). `reason` có thể là: `"keywords_not_array"` (table không phải mảng thuần), `"too_many_keywords"` (>64), `"too_deep"`, `"too_many_keys"`, `"encode_failed"` (gặp function/userdata/thread), `"payload_too_big"`, `"send_failed"`.
 
@@ -204,6 +190,15 @@ function on_voice_event(e)
 end
 ```
 
+### `Ranking` — leaderboard Robot Game platform (qua IPC sang back)
+
+`Ranking.report` gửi kết quả round lên back (`POST /games/result`); `duration_ms` do engine tự tính (từ lúc VM khởi tạo), **không** nhận từ Lua để chống giả mạo. Gọi được nhiều lần/session (ví dụ mỗi lần lên level). Mỗi lần `report` thành công, back tự fetch lại `/games/rank` và gửi kết quả mới về — poll bằng `get_result()` từ `on_tick()`, không chỉ gọi 1 lần cuối round.
+
+| Hàm | Trả về | Lỗi | Ghi chú |
+|---|---|---|---|
+| `Ranking.report({score})` | bool | — | `false` khi bad_score/encode_failed/payload_too_big/send_failed, không raise |
+| `Ranking.get_result()` | table \| nil | — | `{top = {...}, my_rank = {...}\|nil, my_best_score = number\|nil}`; `nil` = chưa có kết quả mới hoặc đã bị tiêu thụ (consume-once) |
+
 ### `print`
 
 `print(...)` được override → đẩy vào ESP_LOG (tag `[lua]`), nối các arg bằng tab. Không có stdout.
@@ -215,15 +210,14 @@ end
 | Hạng mục | Giá trị |
 |---|---|
 | FPS / dt_ms mặc định | 30 / ~33ms |
-| Max sprite | 32 |
+| Max sprite | *không có trần* — giới hạn bởi PSRAM còn trống |
 | Ảnh tối đa | 480 × 320 px |
 | PNG / Anim file | ≤ 1MB / ≤ 4MB |
 | Font | ≤ 512KB, size 8–96px, ≤4 face cache |
 | Lua heap | 512KB (PSRAM) |
 | Watchdog | 1.5s / hook |
-| State.save | ≤ 4096 byte |
-| Input action | ≤16, tên ≤24 ký tự |
-| Audio alias | ≤64, path ≤64 ký tự, cooldown 80ms |
+| Input action | ≤16, tên ≤23 ký tự |
+| Audio alias | ≤64, alias ≤23 ký tự, path ≤63 ký tự, cooldown 150ms |
 | Servo alias / pose | ≤8 / ≤16 |
 | Voice.set_keywords | ≤64 keyword; encode sâu ≤4, ≤32 key, ≤2048B |
 | Led blink / pulse | [333,5000]ms / [100,5000]ms |

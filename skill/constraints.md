@@ -15,9 +15,8 @@
 | PNG / Anim file | ≤ 1MB / ≤ 4MB | |
 | Font | ≤ 512KB, size 8–96px, ≤ 4 face cache | |
 | Lua heap | 512KB (PSRAM), cố định | OOM → hook fail |
-| `State.save` | ≤ 4096 byte | > 4KB → `false` |
-| Input action | ≤ 16, tên ≤ 24 ký tự | |
-| Audio alias | ≤ 64, path ≤ 64 ký tự, cooldown 80ms | play trong cooldown → `false` |
+| Input action | ≤ 16, tên ≤ 23 ký tự | vượt → reject cả pack |
+| Audio alias | ≤ 64, alias ≤ 23 ký tự, path ≤ 63 ký tự, cooldown 150ms | vượt 64 → reject cả pack; play trong cooldown → `false` |
 | Servo alias / pose | ≤ 8 / ≤ 16 | |
 | Voice keyword | ≤ 64; JSON encode sâu ≤ 4, ≤ 32 key, ≤ 2048B | fail-loud `(nil,reason)` |
 | Led blink / pulse | [333,5000]ms / [100,5000]ms | ngoài khoảng → **REJECT** (không clamp) |
@@ -29,13 +28,13 @@
 - **Không mạng.** Không socket, HTTP, MQTT từ Lua.
 - **`require` bị khoá vào game.** Chỉ `require("libs/x")` — nạp `<game>/libs/x.lua`. Không nạp module hệ thống/bên ngoài.
 - **Truy cập file = qua API engine**, đường dẫn nối vào `GAMES_ROOT/<game_id>`, **relative-only**, không `..`. Áp cho cả `Sprite.image`, `Speaker.play` (alias), `Text:set_font`.
-- **Lưu trạng thái = `State.*`** (ghi `save.sav` per-game, ≤ 4KB). Không có cách ghi file khác.
+- **Không có API lưu trạng thái.** `State.*` đã bị gỡ khỏi engine; Lua không ghi được file nào. Trạng thái chỉ sống trong 1 phiên chơi — muốn giữ điểm thì đẩy lên server bằng `Ranking.report`.
 
 ## Mô hình frame (không có game loop của bạn)
 
 - **Cấm `while true` / busy-wait / sleep.** Engine giữ vòng lặp; code bạn chạy trong hook rồi **phải return**.
 - Việc trải theo thời gian → đếm bằng `Timer.millis()` trong `on_tick`, không chờ đồng bộ.
-- Không thao tác **NVS/SPIFFS/FATFS trong vòng nóng** (`on_tick`). `State.save` chạm SD → chỉ ở checkpoint.
+- Không thao tác **NVS/SPIFFS/FATFS trong vòng nóng** (`on_tick`). Nạp asset lớn ở `game_start`, không trong `on_tick`.
 
 ## Đồ hoạ
 

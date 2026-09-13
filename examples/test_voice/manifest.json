@@ -1,7 +1,8 @@
 {
   "version": "0.1.0",
-  "display_name": "Voice Probe",
-  "entry_script": "scripts/main.lua",
+  "name": "Voice Probe",
+  "main": "scripts/main.lua",
+  "peripherals": ["voice"],
   "input": {
     "actions": {
       "fire": ["button:enter"],

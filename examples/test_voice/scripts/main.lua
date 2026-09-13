@@ -20,7 +20,7 @@
 --             it calls Engine.report_result{event=...} then Engine.exit(). In an
 --             A2A talk-flow game the backend uplinks game_result{event} and the
 --             agent resumes; in offline mode report_result is ignored back-side
---             (logged) and exit just ends the game. Voice.mode() shows which.
+--             (logged) and exit just ends the game. params.is_a2a shows which.
 --
 -- on_voice_event(e) arrives as a TABLE (engine marshals the JSON frame). A
 -- defensive raw-string fallback keeps the game alive if the engine ever falls
@@ -36,8 +36,9 @@ local Voice_set_keywords = Voice.set_keywords
 local Voice_start        = Voice.start
 local Voice_stop         = Voice.stop
 local Voice_is_available = Voice.is_available
-local Voice_mode         = Voice.mode
 local Engine_report      = Engine.report_result
+-- Talk-flow mode, latched from game_start(params).is_a2a (Voice.mode() is gone).
+local is_a2a             = false
 local Engine_exit        = Engine.exit
 -- One Text label, created lazily (Text.new needs the game screen).
 local hud_lbl
@@ -186,13 +187,14 @@ local error_tests = {
         end,
     },
     {
-        name = "Voice.mode() returns string",
+        -- Voice.mode() was removed from the engine; params.is_a2a (latched in
+        -- game_start) is the single source of truth for talk-flow mode.
+        name = "Voice.mode() is gone",
         run = function()
-            local m = Voice_mode and Voice_mode() or nil
-            if type(m) ~= "string" then
-                return false, "got type=" .. type(m) .. " want string"
+            if Voice.mode ~= nil then
+                return false, "Voice.mode still present type=" .. type(Voice.mode)
             end
-            return true, "mode=" .. m
+            return true, "mode=" .. (is_a2a and "a2a" or "offline") .. " (params.is_a2a)"
         end,
     },
 }
@@ -466,8 +468,7 @@ local function render_latency(buf, n)
 end
 
 local function render_result(buf, n)
-    n = n + 1; buf[n] = fmt("RESULT mode=%s",
-                            tostring(Voice_mode and Voice_mode() or "?"))
+    n = n + 1; buf[n] = fmt("RESULT mode=%s", is_a2a and "a2a" or "offline")
     n = n + 1; buf[n] = fmt("event > %s", RESULT_EVENTS[result.idx] or "?")
     n = n + 1; buf[n] = "(A2A: uplinks game_result)"
     if result.last_err then
@@ -501,11 +502,14 @@ local function render()
 end
 
 -- ── Engine hooks ──────────────────────────────────────────────────────
-function game_start()
-    local ev = (Engine and Engine.version and Engine.version()) or "?"
-    print(fmt("voice_probe game_start engine=%s available=%s mode=%s",
-              tostring(ev), tostring(Voice_is_available()),
-              tostring(Voice_mode and Voice_mode() or "?")))
+-- params is always a table (engine decodes the JSON body; empty on failure).
+-- is_a2a / language are added host-side by the engine.
+function game_start(params)
+    is_a2a = (type(params) == "table") and params.is_a2a == true
+    print(fmt("voice_probe game_start lang=%s available=%s mode=%s",
+              tostring(type(params) == "table" and params.language or "?"),
+              tostring(Voice_is_available()),
+              is_a2a and "a2a" or "offline"))
     dirty()
 end
 

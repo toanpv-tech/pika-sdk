@@ -82,9 +82,9 @@ A2A tiếp tục
 - **Server** quyết định vào game (`game_id` = tên folder pack trên SD) và nhận kết quả (`ended` = completed/user_home/error).
 - Kết nối **giữ sống** suốt lúc chơi → game nên có thời lượng hợp lý.
 - Ở luồng này **dùng được `Voice`** (đang online), ví dụ game luyện phát âm.
-- Luồng học **Learn** có cơ chế tương tự ([Flow/Learn_Game.md](Flow/Learn_Game.md)).
+- Luồng học **Learn** có cơ chế tương tự (tài liệu luồng Learn (nội bộ firmware)).
 
-> ⚠️ Hợp đồng message A2A (`PLAY_GAME`/`GAME_RESULT`, timeout, reward) **đang chốt với backend** — [Flow/A2A_Game.md](Flow/A2A_Game.md).
+> ⚠️ Hợp đồng message A2A (`PLAY_GAME`/`GAME_RESULT`, timeout, reward) **đang chốt với backend** — tài liệu luồng A2A (nội bộ firmware).
 
 ---
 
@@ -101,7 +101,6 @@ Mọi giới hạn là **trần cứng** do firmware đặt — vượt là bị
 | Ảnh PNG | giới hạn kích thước (≤ panel) & dung lượng | tải ảnh thất bại |
 | Anim GIF/MJPEG | **chỉ 1 ảnh cùng lúc**, có trần dung lượng | anim mới dừng anim cũ |
 | Font TTF | giới hạn dung lượng & số face đồng thời | dùng subset theo ngôn ngữ |
-| `State.save` | có trần kích thước blob | trả `false` |
 | Âm thanh | có cooldown giữa 2 lần `Speaker.play` | bị bỏ (trả `false`) |
 | File | chỉ thư mục game; không đọc/ghi ngoài, không ghi cấu hình hệ thống | đường dẫn ngoài bị chặn |
 | Mạng / Lua | không tự mở kết nối; sandbox không `io`/`os`/`require` tuỳ ý (chỉ `libs/...`) | API cấm → lỗi nạp |
@@ -119,5 +118,5 @@ Mọi giới hạn là **trần cứng** do firmware đặt — vượt là bị
 | Viết game (manifest, hook, ví dụ) | [Guide · Quickstart](guide.md#1-quickstart--game-pack-đầu-tiên) |
 | Toàn bộ API Lua | [API Reference](api.md#tham-chiếu-api-lua) |
 | Sandbox & giới hạn chi tiết | [Guide · §6](guide.md#6-sandbox--giới-hạn) |
-| Luồng A2A / Learn × game | [A2A_Game](Flow/A2A_Game.md) · [Learn_Game](Flow/Learn_Game.md) |
+| Luồng A2A / Learn × game | tài liệu luồng A2A / Learn (nội bộ firmware) |
 | Bên trong engine (firmware) | [Module Firmware](module.md) |

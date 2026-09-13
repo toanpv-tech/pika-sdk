@@ -1,7 +1,7 @@
 {
   "version": "0.1.0",
-  "display_name": "Button Stress Test",
-  "entry_script": "scripts/main.lua",
+  "name": "Button Stress Test",
+  "main": "scripts/main.lua",
   "input": {
     "actions": {
       "enter": ["button:enter"],

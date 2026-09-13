@@ -22,23 +22,15 @@
 --
 -- HOME is host-driven (NOT a menu action); the game wires on_home.
 --
--- spec = { rows, start_label, on_start (REQUIRED), actions?, kit?, title?,
---          has_save?, on_resume?, resume? }
+-- spec = { rows, start_label, on_start (REQUIRED), actions?, kit?, title? }
 -- choice row = { kind="choice", key=, label=, options={...}, default=<idx>,
 --                label_img=, option_imgs={...} }   -> cfg[key] = index
 -- range  row = { kind="range", key=, label=, min=, max=, step=, default=,
 --                unit=, on_change=, label_img= }    -> cfg[key] = number
 --
--- Resume affordance (optional, opt-in): when spec.has_save is truthy the lib
--- prepends a leading Continue/New-game choice. The lib ONLY drives the choice +
--- dispatch; the GAME owns persistence — it passes spec.has_save (e.g.
--- State.has_save()) and spec.on_resume (REQUIRED when has_save; loads + restores
--- its own save). The resume row is a direct launcher: LEFT/RIGHT flip Continue<->
--- New (scrolling away at the ends), ENTER launches on the spot — Continue fires
--- on_resume, New fires on_start(cfg). The start button launches the same way.
--- spec.resume = { continue_label=, new_label=, label_img=, option_imgs={...} }
--- customises the labels/art (text shows only in the no-kit fallback; sprite mode
--- needs option_imgs to be visible, like any choice row).
+-- NOTE: there is no Continue/resume affordance. The engine exposes NO
+-- persistence API (State.* was removed), so nothing can survive a session and
+-- a "Continue" row could never be reachable.
 
 local M = {}
 local Menu = {}
@@ -92,32 +84,12 @@ end
 function M.new(spec)
   assert(type(spec) == "table", "settings.new: spec table required")
   assert(type(spec.on_start) == "function", "settings.new: spec.on_start required")
-  -- Optional resume choice, prepended as the first value row. Built into a fresh
-  -- list so the caller's spec.rows is never mutated. Tracked in _resume_row so
-  -- the start action can branch on it without scanning by key.
   local rows = spec.rows or {}
-  local resume_row
-  if spec.has_save then
-    assert(type(spec.on_resume) == "function",
-           "settings.new: spec.on_resume required when has_save")
-    local rz = spec.resume or {}
-    resume_row = {
-      kind = "choice", key = "__resume",
-      options = { rz.continue_label or "Tiep tuc", rz.new_label or "Choi moi" },
-      default = 1,                       -- default focus = Continue
-      label_img = rz.label_img, option_imgs = rz.option_imgs,
-    }
-    local merged = { resume_row }
-    for _, r in ipairs(rows) do merged[#merged + 1] = r end
-    rows = merged
-  end
   local self = setmetatable({
     title       = spec.title,
     rows        = rows,
     start_label = spec.start_label or "Start",
     on_start    = spec.on_start,
-    on_resume   = spec.on_resume,
-    _resume_row = resume_row,
     kit         = spec.kit or "images/settings",
     cursor      = 1,      -- 1 = start button ; 2..#rows+1 = value rows
     editing     = false,
@@ -129,8 +101,8 @@ function M.new(spec)
     _spr        = {},
     _last       = {},
     -- Value-row geometry. 2 rows keep the original 170/72 layout byte-for-byte;
-    -- a 3rd row (e.g. the resume choice) compresses so the last row stays fully
-    -- on the 320px screen instead of clipping off the bottom.
+    -- 3 or more rows compress so the last row stays fully on the 320px screen
+    -- instead of clipping off the bottom.
     _row_y0     = (#rows >= 3) and 150 or L.ROW_Y0,
     _pitch      = (#rows >= 3) and 60  or L.ROW_PITCH,
   }, Menu)
@@ -175,16 +147,9 @@ function Menu:_collect()
   return cfg
 end
 
--- Fire the chosen start action: Continue -> on_resume, otherwise on_start(cfg)
--- with the internal __resume key stripped. Shared by the start button and the
--- resume row so either one launches.
+-- Fire the start action with the collected config.
 function Menu:_launch()
-  if self._resume_row and self._resume_row._idx == 1 then
-    self.on_resume()
-  else
-    local cfg = self:_collect(); cfg.__resume = nil
-    self.on_start(cfg)
-  end
+  self.on_start(self:_collect())
 end
 
 function Menu:_scroll(dir)
@@ -200,23 +165,6 @@ function Menu:input(action, phase)
     if action == self.a_left then self:_adjust(-1); return true
     elseif action == self.a_right then self:_adjust(1); return true
     elseif action == self.a_enter then self.editing = false; return true end
-    return false
-  end
-  -- The resume row is a direct action selector (NOT an editable value): LEFT/
-  -- RIGHT flip Continue<->New and fall through to scrolling at the ends, ENTER
-  -- launches immediately. This is what a returning player expects from pressing
-  -- the highlighted "Continue" item.
-  local frow = self.rows[self.cursor - 1]
-  if frow and frow == self._resume_row then
-    if action == self.a_left then
-      if frow._idx > 1 then frow._idx = frow._idx - 1 else self:_scroll(-1) end
-      return true
-    elseif action == self.a_right then
-      if frow._idx < #frow.options then frow._idx = frow._idx + 1 else self:_scroll(1) end
-      return true
-    elseif action == self.a_enter then
-      self:_launch(); return true
-    end
     return false
   end
   if action == self.a_left then self:_scroll(-1); return true

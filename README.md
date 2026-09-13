@@ -31,6 +31,9 @@ Mỗi phần có một `*.index.json` để tool đọc mà không phải quét 
 báo (mềm) nếu firmware trên board báo version khác — vì SDK và firmware là hai
 repo tách rời, đây là cách duy nhất phát hiện lệch.
 
+Mỗi lần tăng `sdk_version` phải thêm một mục vào [CHANGELOG.md](CHANGELOG.md)
+(quy tắc đánh version nằm ở đầu file đó).
+
 ## Assets
 
 Từ [Kenney](https://kenney.nl) — CC0 trừ khi `License.txt` của pack nói khác.

@@ -64,7 +64,7 @@ end
 **Ghi chú:**
 - `on_start(cfg)` **bắt buộc**. `cfg[key]`: `choice` → **index** (1-based), `range` → **số**.
 - Phải **forward `on_input` → `menu:input(action, phase)`** khi menu còn sống; lib lo nav 3-nút và nút Start.
-- Có save? `settings.new` hỗ trợ `has_save`/`on_resume` (Continue vs New) — xem `libs/settings.lua`.
+- **Không có màn "Continue".** Engine không có API lưu trạng thái (`State.*` đã bị gỡ) nên không gì sống qua phiên chơi; `settings.new` cũng đã bỏ `has_save`/`on_resume`.
 - **Lưu ý font:** dùng nhãn **ASCII không dấu** ("Do kho" không "Độ khó") trừ khi đã `set_font` một TTF có glyph tiếng Việt; font mặc định thiếu dấu.
 
 Chi tiết đầy đủ: đọc header của [../../libraries/settings.lua](../../libraries/settings.lua).

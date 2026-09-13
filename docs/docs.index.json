@@ -3,11 +3,12 @@
   "entry": "getting-started.md",
   "docs": [
     { "file": "getting-started.md", "title": "Bắt đầu nhanh", "summary": "Cài tool → mở game mẫu → Run → sửa → Export. Đọc đầu tiên." },
-    { "file": "overview.md", "title": "Tổng quan", "summary": "Bức tranh engine cho đội làm game: vòng đời, mô hình frame, ràng buộc." },
-    { "file": "guide.md",    "title": "Hướng dẫn viết Game Pack", "summary": "Từng bước dựng một game pack Lua: manifest, entry script, hook." },
-    { "file": "api.md",      "title": "Tham chiếu API Lua", "summary": "Toàn bộ binding: Engine, Text, Sprite, Input, Speaker, Voice, State, Timer." },
+    { "file": "overview.md", "title": "Tổng quan", "summary": "Bức tranh engine cho đội làm game: ngoại vi, hai luồng chơi (Offline / A2A), ràng buộc tài nguyên." },
+    { "file": "guide.md",    "title": "Hướng dẫn viết Game Pack", "summary": "Từng bước dựng một game pack Lua: manifest, main script, vòng đời & hook, sandbox." },
+    { "file": "manifest.md", "title": "manifest.json — Schema v2", "summary": "Schema manifest đầy đủ: name/main/peripherals, input map, audio, servo." },
+    { "file": "api.md",      "title": "Tham chiếu API Lua", "summary": "Toàn bộ binding: Engine, Timer, Text, Input, Sprite, Anim, Speaker, Servo, Led, Voice, Ranking." },
     { "file": "module.md",   "title": "Module Firmware", "summary": "Các module engine phía firmware (tham khảo, không cần cho người viết game)." },
-    { "file": "monitor.md",  "title": "Monitor — Keyword", "summary": "Từ khoá log để chẩn đoán khi chạy trên board." },
+    { "file": "monitor.md",  "title": "Monitor — Log vòng đời", "summary": "Log theo pha vòng đời game (game.start/running/stop/error/warn) để chẩn đoán trên board." },
     { "file": "README.md",   "title": "Mục lục tài liệu", "summary": "Điểm vào, liên kết tới các tài liệu còn lại." }
   ]
 }

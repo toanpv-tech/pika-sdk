@@ -90,8 +90,8 @@ local FULL_PLAYLIST = {
 }
 local CLIP_MAX_MS = 30000   -- per-clip ceiling if no COMPLETED ever arrives
 
--- Mirror of PIKA_SOUND_PLAY_COOLDOWN_US (sound_tuning.h, default 80 ms).
-local COOLDOWN_MS = 80
+-- Mirror of GAME_SOUND_PLAY_COOLDOWN_US (sound_tuning.h <- CONFIG_GAME_SOUND_PLAY_COOLDOWN_MS, 150 ms).
+local COOLDOWN_MS = 150
 
 -- Reason code names for readable logs/HUD.
 local REASON_NAME = {
@@ -487,7 +487,7 @@ reg_async("sweep", "every clip resolves + decodes",
 TESTS[#TESTS].settle_ms = PLAY_SETTLE_MS
 
 -- Distinct-file preempt storm: cycle PLAYLIST firing one play per tick for
--- 2 s. The 80 ms cooldown paces acceptance; each accepted play opens a
+-- 2 s. The 150 ms cooldown paces acceptance; each accepted play opens a
 -- DIFFERENT clip that preempts the previous, churning decoder setup/teardown
 -- across the whole set. Pass = pipeline survives + plays were accepted +
 -- no decode/IO error (every distinct asset resolves).
@@ -515,7 +515,7 @@ reg_async("sweep", "distinct-file preempt storm (2s)",
 TESTS[#TESTS].settle_ms = PLAY_SETTLE_MS
 
 -- ── Group E: Stress (async / FSM) ────────────────────────────────────
--- Cooldown flood: hammer play() 8x/tick for 2 s. The 80 ms engine-layer
+-- Cooldown flood: hammer play() 8x/tick for 2 s. The 150 ms engine-layer
 -- cooldown must reject the bulk (cooldown_reject grows). Pass criteria:
 --   * cooldown_reject delta > 0 (gate engages)
 --   * no Lua error / crash; finish ring drop reported (informational)

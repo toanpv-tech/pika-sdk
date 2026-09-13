@@ -5,7 +5,7 @@
 
 Ký hiệu lỗi: `raise` = ném lỗi (kết thúc hook) · `false` = trả false · `(nil,msg)` = trả nil + lý do · `—` = không có nhánh lỗi.
 
-12 global: `Engine` `State` `Timer` `Text` `Input` `Sprite` `Anim` `Speaker` `Servo` `Led` `Voice` `print`.
+12 global: `Engine` `Timer` `Text` `Input` `Sprite` `Anim` `Speaker` `Servo` `Led` `Voice` `Ranking` `print`.
 
 ---
 
@@ -15,17 +15,16 @@ Ký hiệu lỗi: `raise` = ném lỗi (kết thúc hook) · `false` = trả fal
 |---|---|---|
 | `Engine.exit([reason])` | — | Lên lịch dừng game; frame hiện tại chạy nốt. `reason` string default `"lua"`. |
 | `Engine.report_result(tbl)` | `true` \| `(nil,msg)` | Chỉ dùng trong luồng A2A. `tbl.event` (string, bắt buộc). Bỏ qua nếu game thường. |
+| `Engine.stack_hwm()` | integer | High-water mark C stack (debug). Không dùng trong gameplay. |
 
-## State — lưu KV/blob per-game (chạm SD)
+> **KHÔNG có `Engine.version()`** và **KHÔNG có API lưu trạng thái** — xem mục "API KHÔNG tồn tại".
+
+## Ranking — leaderboard (qua IPC sang back)
 
 | Hàm | Trả về | Ghi chú |
 |---|---|---|
-| `State.set(key, value)` | — | value = number/string/bool |
-| `State.get(key)` | any\|nil | |
-| `State.save([blob])` | bool | Không arg → serialize KV thành JSON. `blob` string → ghi verbatim. > 4KB → false. **Chỉ gọi ở checkpoint, KHÔNG trong on_tick.** |
-| `State.load()` | bool\|string\|nil | |
-| `State.has_save()` | bool | cho nút "Continue" |
-| `State.clear()` | bool | |
+| `Ranking.report({score})` | bool | Gửi kết quả round. `duration_ms` do engine tự tính, **không** nhận từ Lua. Gọi được nhiều lần/session. `false` khi bad_score/encode_failed/payload_too_big/send_failed (không raise). |
+| `Ranking.get_result()` | table \| nil | `{top={...}, my_rank=...\|nil, my_best_score=number\|nil}`. `nil` = chưa có kết quả mới hoặc đã tiêu thụ (**consume-once**). Poll từ `on_tick()`, không chỉ gọi 1 lần cuối round. |
 
 ## Timer
 
@@ -95,7 +94,7 @@ Hằng: `Input.PRESS=0` `Input.RELEASE=1` `Input.REPEAT=2`. `action` = tên bạ
 | `anim:set_pos(x,y)` / `:set_visible(b)` | — | |
 | `anim:destroy()` | — | idempotent |
 
-## Speaker — âm thanh (cooldown 80ms giữa 2 play)
+## Speaker — âm thanh (cooldown 150ms giữa 2 play)
 
 | Hàm | Trả về | Ghi chú |
 |---|---|---|
@@ -143,7 +142,8 @@ Hằng `reason` (trong `on_sound_end`): `Speaker.REASON_COMPLETED=0` `REASON_STO
 | `Voice.start()` | `true` \| `(nil,"send_failed")` | |
 | `Voice.stop()` | bool | idempotent |
 | `Voice.is_available()` | bool | |
-| `Voice.mode()` | string | `"a2a"` (trong talk flow) / `"offline"` |
+
+> **`Voice.mode()` đã bị gỡ.** Muốn biết game có chạy trong talk flow A2A không: đọc `params.is_a2a` trong `game_start(params)` — **nguồn duy nhất**.
 
 Nhận lệnh qua `on_voice_event(e)`: `e.type == "VOICE_COMMAND"` → `e.data.keyword`. Chi tiết + mẫu: [recipes/voice-keyword-trigger.md](recipes/voice-keyword-trigger.md).
 
@@ -162,7 +162,10 @@ Nhận lệnh qua `on_voice_event(e)`: `e.type == "VOICE_COMMAND"` → `e.data.k
 | `Engine.now_ms()`, `os.time()`, `os.clock()` | `Timer.millis()` |
 | `love.*`, `update()`, `on_draw()`, `draw()` | hook `on_tick` + Sprite/Text retained |
 | `require("json")`, `require("socket")`, module ngoài | chỉ `require("libs/…")` trong game |
-| `io.*`, `os.*`, `os.execute` | sandbox chặn hết; lưu game = `State.*` |
+| `io.*`, `os.*`, `os.execute` | sandbox chặn hết — không có cách ghi file nào từ Lua |
+| `State.*` (`State.save/load/get/set/has_save/clear`) | **Đã bị gỡ khỏi engine.** Hiện **không có API lưu trạng thái** qua phiên chơi. Điểm số chỉ sống trong 1 phiên (hoặc đẩy lên server bằng `Ranking.report`). |
+| `Voice.mode()` | `params.is_a2a` trong `game_start(params)` |
+| `Engine.version()` | không có; đừng in version từ Lua |
 | `Sprite.rotate`, `spr:rotate()`, `spr:scale()` | không có xoay/scale; chỉ flip (`set_flip`) |
 | `Sprite.text(...)`, vẽ chữ lên sprite | dùng `Text.*` (label riêng) |
 | `Speaker.play_file("path.wav")` | `Speaker.play("<alias>")` (khai alias trong manifest) |

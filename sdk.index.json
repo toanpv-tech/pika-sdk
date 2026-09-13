@@ -1,10 +1,10 @@
 {
   "schema": "pika-sdk/1",
-  "sdk_version": "1.0.2",
+  "sdk_version": "1.1.1",
   "name": "Pika SDK",
   "description": "Kho thông tin hỗ trợ cho Pika Studio: assets, docs, thư viện Lua và game mẫu. Repo độc lập, addon vào tool qua git URL (pika.sdk.source).",
   "engine_api": {
-    "min": "1.0.2",
+    "min": "1.1.1",
     "note": "Version hợp đồng API mà SDK này viết theo. Tool so với version firmware báo lúc chạy và cảnh báo (mềm) nếu lệch."
   },
   "sections": {

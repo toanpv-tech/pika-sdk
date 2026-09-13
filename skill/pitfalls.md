@@ -43,7 +43,7 @@ if player then player:set_pos(x, y) end   -- set_pos ngay, đừng để tới f
 
 **Nguyên nhân:** Bịa API từ engine khác. Hay gặp: `Engine.now_ms`, `os.time`, `spr:rotate`, `require("json")`, `Voice.listen`.
 
-**Fix:** Đối chiếu [api-contract.md](api-contract.md), mục "API KHÔNG tồn tại". Thời gian = `Timer.millis()`. Va chạm = `spr:intersects`. Lưu = `State.*`.
+**Fix:** Đối chiếu [api-contract.md](api-contract.md), mục "API KHÔNG tồn tại". Thời gian = `Timer.millis()`. Va chạm = `spr:intersects`. **Không có API lưu** (`State.*` đã bị gỡ).
 
 ## 4. Vượt Text pool → nil
 
@@ -62,9 +62,9 @@ if not hud then return end   -- pool_full
 
 **Triệu chứng:** Game đứng hình, có thể reset; log watchdog.
 
-**Nguyên nhân:** `while` chờ điều kiện, tính toán nặng mỗi frame, hoặc `State.save` trong `on_tick`.
+**Nguyên nhân:** `while` chờ điều kiện, tính toán nặng mỗi frame, hoặc nạp asset trong `on_tick`.
 
-**Fix:** Không vòng chờ. Trải việc qua nhiều `on_tick` đo bằng `Timer.millis()`. `State.save` chỉ ở checkpoint (game over, qua màn), không mỗi frame.
+**Fix:** Không vòng chờ. Trải việc qua nhiều `on_tick` đo bằng `Timer.millis()`. Nạp asset nặng ở `game_start`, không mỗi frame.
 
 ## 6. Âm thanh "File not found" dù file có thật
 
@@ -108,7 +108,7 @@ if not hud then return end   -- pool_full
 
 **Nguyên nhân:** Sandbox chỉ nạp `require("libs/x")` = `<game>/libs/x.lua`.
 
-**Fix:** Copy lib cần dùng vào `<game>/libs/` (từ SDK `libraries/`, hoặc extension nút "Add to a game…" tự kéo cả dependency). JSON: dùng `State.*` để lưu, không cần thư viện JSON.
+**Fix:** Copy lib cần dùng vào `<game>/libs/` (từ SDK `libraries/`, hoặc extension nút "Add to a game…" tự kéo cả dependency). Không có API lưu trạng thái nên không cần thư viện JSON để persist.
 
 ---
 

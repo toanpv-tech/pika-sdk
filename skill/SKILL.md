@@ -24,7 +24,7 @@ Engine gọi các hàm global này nếu bạn định nghĩa (đều tuỳ ch�
 
 | Hook | Khi nào gọi | Tham số |
 |---|---|---|
-| `game_start(level_json)` | 1 lần, khi vào game. Nơi tạo sprite/text/keyword. | `level_json` = string JSON (thường `nil`/rỗng) |
+| `game_start(params)` | 1 lần, khi vào game. Nơi tạo sprite/text/keyword. | `params` = **table** (luôn là table, rỗng nếu không có/hỏng). Engine tự thêm `params.is_a2a` (bool) và `params.language` (ISO 639-1) |
 | `on_tick(dt_ms)` | Mỗi frame (~33ms). Frame logic của bạn. | `dt_ms` = số ms từ frame trước |
 | `on_input(action, phase, hold_ms)` | Khi có sự kiện nút | `action` string, `phase` = `Input.PRESS/RELEASE/REPEAT`, `hold_ms` int |
 | `on_voice_event(e)` | Khi backend trả lệnh giọng | `e` = table (hoặc raw JSON string nếu vượt cap) |
@@ -45,7 +45,7 @@ Engine gọi các hàm global này nếu bạn định nghĩa (đều tuỳ ch�
 ├── manifest.json      # BẮT BUỘC — khai báo game, input, assets
 ├── icon.png           # icon lưới menu (khuyến nghị)
 ├── scripts/
-│   └── main.lua       # entry_script (theo manifest)
+│   └── main.lua       # "main" (theo manifest)
 ├── images/            # .png / .rgb565 (tuỳ)
 ├── audio/             # nếu game có tiếng
 └── libs/              # module Lua require("libs/x") (copy từ SDK libraries/)
@@ -56,8 +56,8 @@ Engine gọi các hàm global này nếu bạn định nghĩa (đều tuỳ ch�
 ```json
 {
   "version": "0.1.0",
-  "display_name": "Tên hiển thị",
-  "entry_script": "scripts/main.lua",
+  "name": "Tên hiển thị",
+  "main": "scripts/main.lua",
   "input": {
     "actions": {
       "enter": ["button:enter"],

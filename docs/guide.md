@@ -26,8 +26,8 @@ Một **game pack** là một thư mục trên thẻ SD chứa `manifest.json` +
 
 ```json
 {
-  "display_name": "Hello Pika",
-  "entry_script": "scripts/main.lua",
+  "name": "Hello Pika",
+  "main": "scripts/main.lua",
   "input": {
     "actions": {
       "confirm": ["button:enter"],
@@ -44,7 +44,7 @@ Một **game pack** là một thư mục trên thẻ SD chứa `manifest.json` +
 local label   -- Text handle, tạo lazy (Text.new cần game screen)
 
 -- Chạy 1 lần khi game bắt đầu
-function game_start(level_json)
+function game_start(params)
   label = Text.new("Hello Pika!", 4, 4)
   Servo.pose("say_hi")          -- nếu pose "say_hi" được khai báo trong manifest.servos.poses
 end
@@ -79,14 +79,13 @@ Mỗi game pack **self-contained** — tự mang mọi asset của riêng nó, k
 /sd/games/
 └── <game_id>/                  # game pack của bạn (game_id = tên thư mục)
     ├── manifest.json           # bắt buộc
-    ├── scripts/main.lua        # entry_script mặc định
+    ├── scripts/main.lua        # main mặc định
     ├── libs/                   # .lua dùng qua require("libs/<module>")
     │   └── <module>.lua
     ├── sprites/ images/        # ảnh RGB565 thô / PNG
     ├── audio/                  # file âm thanh (alias trong manifest)
     ├── animations/             # .gif / .mjpeg
-    ├── fonts/                  # .ttf (Text:set_font)
-    └── save.sav                # do State.save tạo (không sửa thủ công)
+    └── fonts/                  # .ttf (Text:set_font)
 ```
 
 ### Quy tắc path (sandbox)
@@ -98,22 +97,23 @@ Mỗi game pack **self-contained** — tự mang mọi asset của riêng nó, k
 
 ## 3. `manifest.json` — schema đầy đủ
 
-Tham chiếu: [game_pack.c](../../head_esp32/components/game_engine/src/core/game_pack.c) (giới hạn 64KB, parse cJSON), [input.c](../../head_esp32/components/game_engine/src/subsystems/input/input.c), [sound.c](../../head_esp32/components/game_engine/src/subsystems/sound/sound.c), [servo.c](../../head_esp32/components/game_engine/src/subsystems/servo/servo.c).
+Tham chiếu: `game_pack.c` (giới hạn 64KB, parse cJSON), `input.c`, `sound.c`, `servo.c`.
 
 ### 3.1. Field gốc
 
 | Field | Kiểu | Bắt buộc | Default | Giới hạn |
 |---|---|---|---|---|
-| `display_name` | string | không | `""` | ≤ 63 ký tự (buffer 64 gồm NUL; dài hơn bị cắt) |
-| `entry_script` | string | không | `"scripts/main.lua"` | ≤ 63 ký tự (dài hơn bị cắt) |
+| `name` | string | không | `""` | ≤ 63 ký tự (buffer 64 gồm NUL; dài hơn bị cắt) |
+| `main` | string | không | `"scripts/main.lua"` | ≤ 63 ký tự (dài hơn bị cắt) |
+| `peripherals` | array\<string\> | không | vắng → không ngoại vi nào được đánh dấu "có dùng" | mảng tên ngoại vi (`"voice"`, `"servo"`, `"led"`, `"audio"`, `"button"`, `"display"`); hiện chỉ `"voice"` được đọc (điều khiển lifecycle WS phía back, xem [manifest.md §4](manifest.md#4-peripherals--thay-cho-requires_voice)) |
 | `input` | object | không | xem 3.2 | ≤ 16 action, tên ≤ 23 ký tự |
 | `audio` | object | không | rỗng | ≤ 64 sound |
 | `servos` / `poses` | object | không | rỗng | ≤ 8 servo / ≤ 16 pose, alias ≤ 23 ký tự |
 
-> **Hành vi khi vượt giới hạn — KHÔNG đồng nhất, cần nhớ:**
-> - `audio.sounds` vượt **64** → engine **âm thầm bỏ bớt** (giữ 64 cái đầu, không báo lỗi).
+> **Hành vi khi vượt giới hạn — vượt bảng ngoại vi thì reject, dài tên thì cắt:**
+> - `audio.sounds` vượt **64** → **reject cả pack** (`install_entry` fail ở alias thứ 65 → `goto bad`).
 > - `input.actions` vượt **16**, `servos` vượt **8**, `poses` vượt **16** → **reject cả pack** với `GAME_ENGINE_ERR_PACK_MANIFEST`.
-> - `display_name`/`entry_script` dài hơn 63 ký tự → **cắt cụt** (không reject).
+> - `name`/`main` dài hơn 63 ký tự → **cắt cụt** (không reject).
 >
 > Sai kiểu bất kỳ bảng con nào (input/audio/servo) cũng làm cả manifest bị từ chối.
 
@@ -131,7 +131,7 @@ Map **tên action** (bạn tự đặt) → mảng nguồn nút. Action name là
 ```
 
 - Nguồn hợp lệ: `"button:enter"`, `"button:left"`, `"button:right"` (nhiều nguồn/action được — bitmask).
-- Action name: 1–24 ký tự, duy nhất. Tối đa **16 action**.
+- Action name: 1–23 ký tự, duy nhất. Tối đa **16 action**.
 - **Bỏ block `input`** → engine dùng mặc định: `confirm → [button:enter]`, `left → [button:left]`, `right → [button:right]`.
 
 ### 3.3. `audio.sounds`
@@ -143,14 +143,14 @@ Khai báo alias âm thanh để gọi `Speaker.play("alias")`.
   "sounds": {
     "shoot":  { "path": "audio/shoot.wav", "loop": false },
     "bgm":    { "path": "audio/loop.wav", "loop": true }
-  },
-  "volume": 75
+  }
 }
 ```
 
-- `path`: ≤ 64 ký tự, safe relative (game-relative, resolve dưới `/sd/games/<game_id>/`).
-- `loop`: bool, default false. `volume`: 0–100, override volume phiên (khôi phục khi thoát game).
-- Tối đa **64 alias**, tên 1–24 ký tự. File được `stat()` ngay lúc nạp manifest → sai đường dẫn sẽ làm pack nạp thất bại.
+- `path`: ≤ 63 ký tự, safe relative (game-relative, resolve dưới `/sd/games/<game_id>/`).
+- `loop`: bool, default false.
+- Tối đa **64 alias**, tên 1–23 ký tự. File được `stat()` ngay lúc nạp manifest → sai đường dẫn sẽ làm pack nạp thất bại.
+- Không còn field `audio.volume` trong manifest — game tự chỉnh volume phiên bằng `Speaker.set_volume(pct)` lúc chạy (khôi phục về volume gốc khi thoát game).
 
 ### 3.4. `servos` & `poses`
 
@@ -172,7 +172,7 @@ Tất cả hook đều **optional** (thiếu thì engine bỏ qua, không báo l
 
 | Hook | Chữ ký | Khi nào gọi | Trả về |
 |---|---|---|---|
-| `game_start(level_json)` | `(string)` | 1 lần khi bắt đầu (sau khi script nạp xong) | bỏ qua |
+| `game_start(params)` | `(table)` | 1 lần khi bắt đầu (sau khi script nạp xong) | bỏ qua |
 | `on_tick(dt_ms)` | `(integer)` | mỗi frame (~33ms @30FPS) | bỏ qua |
 | `on_input(action, phase, hold_ms)` | `(string, int, int)` | mỗi input event, **trước** `on_tick` cùng frame | bỏ qua |
 | `on_input_lost(count)` | `(integer)` | khi input ring (32 slot) tràn | bỏ qua |
@@ -183,6 +183,15 @@ Tất cả hook đều **optional** (thiếu thì engine bỏ qua, không báo l
 | `game_end()` | `()` | khi teardown (stop/home-thoát/kết thúc) | bỏ qua (lỗi non-fatal) |
 
 `phase` của `on_input`: `Input.PRESS` (0) / `Input.RELEASE` (1) / `Input.REPEAT` (2). `hold_ms` = 0 khi PRESS.
+
+`params` của `game_start` **luôn là table** (không bao giờ nil/string), gồm các field server gửi kèm lệnh mở game trong hội thoại A2A (ví dụ `difficulty`, `level` — server định nghĩa) cộng 2 field do head tự thêm. Mở từ menu hoặc body rỗng/hỏng → table rỗng, nên game đọc `params.x or default` là an toàn.
+
+| Field head thêm | Kiểu | Ý nghĩa |
+|---|---|---|
+| `params.is_a2a` | bool | `true` khi game mở trong talk flow A2A. **Nguồn duy nhất** — `Voice.mode()` đã bị gỡ |
+| `params.language` | string | Ngôn ngữ UI của robot, mã ISO 639-1: `"vi"` `"en"` `"ko"` `"ja"` `"zh"` `"ru"` `"th"` `"la"` `"km"` `"ph"`. Ngoài dải → `"vi"` |
+
+Cả 2 field là **snapshot lúc start**, không đổi trong ván chơi (VM bị đóng sau mỗi game), nên đọc 1 lần trong `game_start` là đủ. Game nên fallback khi gặp ngôn ngữ chưa dịch, và nhớ dùng font phủ được bộ chữ tương ứng (chữ có dấu tiếng Việt cần font `vi`, nếu không sẽ ra tofu).
 
 > **Thứ tự trong 1 frame:** sound drain (`on_sound_end`) → input drain (`on_input`/`on_input_lost`) → `on_tick` → reset edge → servo/led/sound-stop drain → anim pump. Vì vậy `Input.just_pressed()` đúng trong cả `on_input` lẫn `on_tick` của cùng frame.
 
@@ -216,9 +225,8 @@ Lua VM bị giới hạn để bảo vệ firmware:
 ## 7. Best practices
 
 - So sánh `reason`/`phase` bằng hằng (`Speaker.REASON_*`, `Input.*`), không dùng số literal.
-- `State.save()` chỉ ở checkpoint (chạm FATFS chậm) — **không** gọi trong `on_tick`.
 - Bọc factory trả `(nil,msg)`: `local s = Sprite.image(p); if not s then print("load fail", p) end`.
-- Không tạo sprite/anim mới mỗi frame — tái sử dụng + `:destroy()` khi xong (trần 32 sprite).
+- Không tạo sprite/anim mới mỗi frame — tái sử dụng + `:destroy()` khi xong (không có trần số sprite, nhưng PSRAM thì có).
 - `Servo.is_busy`/`Speaker.is_playing` là **dự đoán**, không phải trạng thái thật của phần cứng — không xây logic phụ thuộc tuyệt đối vào chúng.
 - Giữ danh sách `Voice.set_keywords` gọn (≤64 keyword; JSON encode ≤2048B, sâu ≤4, ≤32 key).
 - `Led.blink` period phải ∈ [333,5000]ms — ngoài range bị **từ chối** (không tự clamp), kiểm `if not Led.blink(...)`.

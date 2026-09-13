@@ -1,7 +1,7 @@
 {
   "version": "0.1.0",
-  "display_name": "Minimal Game",
-  "entry_script": "scripts/main.lua",
+  "name": "Minimal Game",
+  "main": "scripts/main.lua",
   "input": {
     "actions": {
       "enter": ["button:enter"],

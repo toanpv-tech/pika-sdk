@@ -9,9 +9,11 @@ local hud             -- Text handle
 local score = 0
 local SPEED = 3       -- px/frame
 
--- ── game_start(level_json): 1 lần khi vào game ───────────────────────
+-- ── game_start(params): 1 lần khi vào game ──────────────────────────
+-- params LUÔN là table (engine decode JSON; rỗng nếu không có/hỏng). Engine tự
+-- thêm params.is_a2a (bool) và params.language (mã ISO 639-1).
 -- Text.new tạo được ở đây. Sprite/Anim thì KHÔNG (xem pitfalls #1) — tạo trễ.
-function game_start(level_json)
+function game_start(params)
   hud = Text.new("Score: 0", 4, 4)   -- nhớ: pool Text tối đa 8
 end
 

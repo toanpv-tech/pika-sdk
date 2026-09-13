@@ -9,16 +9,22 @@ tool Pika Studio hiển thị các trang này trực tiếp.
 | [Bắt đầu nhanh](getting-started.md) | Người mới | Cài tool → mở game mẫu → Run → sửa → Export. Đọc đầu tiên. |
 | [Tổng quan](overview.md) | Đội phát triển game | Ngoại vi điều khiển được, hai luồng chơi (Offline / A2A), ràng buộc tài nguyên. |
 | [Guide](guide.md) | Người viết game (Lua) | Cách viết game pack: `manifest.json`, cấu trúc SD, vòng đời & hook, sandbox. |
+| [manifest.json](manifest.md) | Người viết game (Lua) | Schema v2 đầy đủ: `name`/`main`/`peripherals`, input map, audio, servo. |
 | [API Reference](api.md) | Người viết game (Lua) | Tra cứu toàn bộ API Lua (~60 hàm) + bảng tra giá trị nhanh. |
 | [Module Firmware](module.md) | Kỹ sư firmware | Kiến trúc nội bộ component `game_engine` (tham khảo). |
-| [Monitor](monitor.md) | Khi chạy trên board | Từ khoá log để chẩn đoán. |
+| [Monitor](monitor.md) | Khi chạy trên board | Log theo vòng đời game để chẩn đoán. |
 
 ## Bắt đầu nhanh
 
 - **Chưa từng dùng?** → [Bắt đầu nhanh](getting-started.md)
 - **Engine làm được gì?** → [Tổng quan](overview.md)
 - **Viết một game?** → [Guide · Quickstart](guide.md)
+- **Khai báo manifest?** → [manifest.json](manifest.md)
 - **Tra cứu API Lua** → [API Reference](api.md)
 
-> Đây là kho tham chiếu (read-only). Khi engine đổi public API / binding /
-> manifest schema, tài liệu ở đây được cập nhật theo và `sdk_version` tăng lên.
+> Đây là kho tham chiếu (read-only), đồng bộ từ `docs/pika-engine` của repo
+> firmware. Khi engine đổi public API / binding / manifest schema, tài liệu ở
+> đây được cập nhật theo và `sdk_version` tăng lên.
+>
+> Các liên kết tới mã nguồn firmware (`head_esp32/...`) được giữ ở dạng tên file
+> vì SDK là repo độc lập, không chứa mã firmware.

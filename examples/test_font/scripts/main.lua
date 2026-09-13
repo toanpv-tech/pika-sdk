@@ -66,7 +66,7 @@ local function show()
     idx, #FONTS, f.label, f.px, s.name, s.text, note))
 end
 
-function game_start(_level_json)
+function game_start(_params)
   show()
 end
 

@@ -47,7 +47,7 @@ function on_tick()
 
   -- va chạm AABB
   if coin and player:intersects(coin) then
-    Speaker.play("hit")          -- trả false nếu cooldown (80ms) — chấp nhận được
+    Speaker.play("hit")          -- trả false nếu cooldown (150ms) — chấp nhận được
     score = score + 1
     hud:set("Score: " .. score)
     coin:destroy()               -- xoá coin đã ăn
@@ -64,6 +64,6 @@ end
 ```
 
 **Ghi chú:**
-- **Cooldown 80ms:** `Speaker.play` liên tiếp quá nhanh trả `false`. Với hiệu ứng dày (bắn liên thanh) đừng dựa vào mỗi phát đều kêu.
+- **Cooldown 150ms:** `Speaker.play` liên tiếp quá nhanh trả `false`. Với hiệu ứng dày (bắn liên thanh) đừng dựa vào mỗi phát đều kêu.
 - **Completion thật chỉ có ở Speaker** (`on_sound_end`). Servo/anim không báo "xong" đáng tin.
 - So `reason` với hằng `Speaker.REASON_*`, không số literal.
