@@ -1,70 +1,103 @@
-# Recipe — Menu cài đặt trước khi vào game
+# Recipe: pre-game settings screen
 
-**Mục tiêu:** màn hình đầu game cho chọn Độ khó / Âm lượng rồi bấm Start — **không tự viết**, dùng lib `libs/settings` có sẵn trong SDK.
+> **Load when** a game needs a first screen with Start plus a few options (difficulty, volume).
+> Uses the shipped `libs/settings` module ([../libs-catalog.md](../libs-catalog.md)). Runnable
+> mini pack: the manifest, `libs/settings.lua` copied from [`../../libraries/settings.lua`](../../libraries/settings.lua),
+> the label images, and `scripts/main.lua` below.
 
-**API dùng:** `require("libs/settings")` → `settings.new(spec)`, forward nút qua `menu:input`.
+## Rules
 
-### 1. Copy lib vào game
+- **SET-ART** MUST ship the label images — the menu draws its chrome with `Sprite.solid` but every caption is an image under `spec.kit`; a missing image is logged (`settings: asset MISSING/invalid -> <path>`) and left blank. The text fallback runs only when `Sprite.solid` itself fails (`libraries/settings.lua:226`), so **without art the rows show no labels**.
+- **SET-ACTIONS** MUST pass `spec.actions` when the manifest names differ from the defaults `left` / `right` / `fire`.
+- **SET-DESTROY** MUST call `menu:destroy()` when leaving the menu and in `game_end` — frees its sprites.
+- **SET-RENDER** MUST call `menu:render()` after each handled input (the first call builds the menu).
 
-Cần `libs/settings.lua` (extension nút **Add to a game…** sẽ kéo cả dependency của nó). Sau đó:
+## Art the module loads
 
-```lua
-local settings = require("libs/settings")
+| File (under `spec.kit`, default `images/settings`) | Shows |
+| --- | --- |
+| `chrome/btn_start.png` | Start button caption |
+| `lbl_<key>.png` | one label per row |
+| `<key>/<i>.png` | one image per option of a `choice` row (`i` is 1-based) |
+
+Per-row overrides: `label_img`, `option_imgs`. `range` rows draw their bars with solids.
+
+## `manifest.json`
+
+```json
+{
+  "version": "0.1.0",
+  "name": {"vi": "Menu cài đặt", "en": "Settings menu"},
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button", "audio"],
+  "input": {
+    "actions": {
+      "confirm": ["button:enter"],
+      "left":    ["button:left"],
+      "right":   ["button:right"]
+    }
+  }
+}
 ```
 
-### 2. Định nghĩa menu + chuyển sang game khi Start
+## `scripts/main.lua`
 
 ```lua
 local settings = require("libs/settings")
-local menu           -- màn settings (nil sau khi vào game)
-local cfg            -- cấu hình đã chọn
+local menu            -- nil once the game has started
+local cfg             -- chosen values
 local player
 
--- Gọi khi người chơi bấm Start
-local function start_game(chosen)
-  cfg  = chosen        -- { difficulty=<index>, volume=<number>, ... }
-  menu = nil           -- rời menu → vào game
-  Speaker.set_volume(cfg.volume or 60)
-end
-
-function on_tick()
-  if menu then return end          -- đang ở màn settings, chờ nút
-
-  if not player then               -- vừa Start → dựng game (tạo trễ, pitfalls #1)
-    player = Sprite.solid(24, 24, 0x07E0)
-    if player then player:set_pos(140, 180) end
-    return
-  end
-  -- ... vòng game bình thường, đọc cfg.difficulty ...
-end
-
-function on_input(action, phase)
-  if menu then
-    menu:input(action, phase)      -- lib tự xử lý nav + Start
-    return
-  end
-  -- input trong game
+local function start_game(chosen)                 -- called from menu:input
+  cfg = chosen                                    -- { difficulty = 1..3, volume = 0..100 }
+  Speaker.set_volume(cfg.volume)
+  menu:destroy()
+  menu = nil
+  player = Sprite.solid(24, 24, 0x07E0)
+  if player then player:set_pos(228, 180) end
 end
 
 function game_start()
   menu = settings.new({
-    title       = "Cai dat",       -- nhãn ASCII (xem lưu ý font)
-    start_label = "Bat dau",
-    on_start    = start_game,      -- BẮT BUỘC
+    actions = { left = "left", right = "right", enter = "confirm" },
+    on_start = start_game,                        -- required: new() raises without it
     rows = {
-      { kind = "choice", key = "difficulty", label = "Do kho",
-        options = { "De", "Vua", "Kho" } },              -- cfg.difficulty = 1/2/3
-      { kind = "range",  key = "volume", label = "Am luong",
-        lo = 0, hi = 100, step = 10, default = 60 },      -- cfg.volume = số
+      { kind = "choice", key = "difficulty", label = "Difficulty",
+        options = { "Easy", "Normal", "Hard" }, default = 2 },   -- cfg.difficulty = index
+      { kind = "range", key = "volume", label = "Volume",
+        min = 0, max = 100, step = 10, default = 60 },           -- cfg.volume = number
     },
   })
+  menu:render()
+end
+
+function on_input(action, phase, hold_ms)
+  if menu then
+    if menu:input(action, phase) and menu then menu:render() end
+    return
+  end
+  -- game input, reading cfg.difficulty
+end
+
+function on_tick(dt_ms)
+  if menu then return end
+  -- game logic
+end
+
+function game_end()
+  if menu then menu:destroy() end
 end
 ```
 
-**Ghi chú:**
-- `on_start(cfg)` **bắt buộc**. `cfg[key]`: `choice` → **index** (1-based), `range` → **số**.
-- Phải **forward `on_input` → `menu:input(action, phase)`** khi menu còn sống; lib lo nav 3-nút và nút Start.
-- **Không có màn "Continue".** Engine không có API lưu trạng thái (`State.*` đã bị gỡ) nên không gì sống qua phiên chơi; `settings.new` cũng đã bỏ `has_save`/`on_resume`.
-- **Lưu ý font:** dùng nhãn **ASCII không dấu** ("Do kho" không "Độ khó") trừ khi đã `set_font` một TTF có glyph tiếng Việt; font mặc định thiếu dấu.
+## Notes
 
-Chi tiết đầy đủ: đọc header của [../../libraries/settings.lua](../../libraries/settings.lua).
+- Controls: left/right move the cursor (Start first, wrapping); enter on a row opens it for
+  editing, left/right change it, enter confirms. HOME is not handled by the menu: define `on_home`.
+- `choice` rows give the 1-based index, `range` rows the number (optional `unit`, `on_change`).
+- No "Continue" row: nothing persists between sessions.
+- Full reference: the header comment of [`../../libraries/settings.lua`](../../libraries/settings.lua).
+
+## Check
+
+`python tools/smoke.py <pack> "right,enter,right,enter,left,enter,wait:500"` ends `0 error(s)`,
+exit 0; then look at the menu in Pika Studio (labels visible only with the art).

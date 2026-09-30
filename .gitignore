@@ -1,7 +1,20 @@
 # Pika SDK repo ignore.
-# Keep the source .zip archives + tooling + generated index; ignore the large
-# extracted per-pack folders (regenerate with assets/unzip_assets.sh).
 
 # OS / editor cruft
 .DS_Store
 Thumbs.db
+
+# Your own game packs (docs/templates/prompts.md, prompt E; /pika-game)
+games/
+
+# Personal Claude Code settings
+.claude/settings.local.json
+
+# Editor settings with machine-specific paths
+.vscode/
+
+# Tool installs and playtest output
+tools/node_modules/
+**/pika-spec.json
+**/shot.png
+__pycache__/

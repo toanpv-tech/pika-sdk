@@ -1,0 +1,198 @@
+{
+ "schema": "pika-contract-api/1",
+ "note": "Generated from the engine's luaL_Reg tables. A name missing here does not exist on the robot.",
+ "globals": {
+  "Anim": {
+   "functions": [
+    "new"
+   ],
+   "methods": [
+    "destroy",
+    "is_playing",
+    "pause",
+    "play",
+    "resume",
+    "set_pos",
+    "set_visible",
+    "stop"
+   ],
+   "constants": []
+  },
+  "Engine": {
+   "functions": [
+    "exit",
+    "report_result",
+    "stack_hwm"
+   ],
+   "methods": [],
+   "constants": []
+  },
+  "Timer": {
+   "functions": [
+    "millis"
+   ],
+   "methods": [],
+   "constants": []
+  },
+  "Text": {
+   "functions": [
+    "new"
+   ],
+   "methods": [
+    "align",
+    "destroy",
+    "move",
+    "set",
+    "set_color",
+    "set_font",
+    "show"
+   ],
+   "constants": []
+  },
+  "Shape": {
+   "functions": [
+    "line"
+   ],
+   "methods": [
+    "destroy",
+    "set_opacity",
+    "set_points",
+    "set_style",
+    "set_visible",
+    "set_z"
+   ],
+   "constants": []
+  },
+  "print": {
+   "functions": [],
+   "methods": [],
+   "constants": []
+  },
+  "Input": {
+   "functions": [
+    "actions",
+    "hold_ms",
+    "is_down",
+    "just_pressed",
+    "just_released",
+    "stats"
+   ],
+   "methods": [],
+   "constants": [
+    "PRESS",
+    "RELEASE",
+    "REPEAT"
+   ]
+  },
+  "Led": {
+   "functions": [
+    "blink",
+    "get_brightness",
+    "is_available",
+    "off",
+    "preset",
+    "pulse",
+    "set",
+    "set_brightness",
+    "stats"
+   ],
+   "methods": [],
+   "constants": []
+  },
+  "Ranking": {
+   "functions": [
+    "get_result",
+    "report"
+   ],
+   "methods": [],
+   "constants": []
+  },
+  "Servo": {
+   "functions": [
+    "is_busy",
+    "list",
+    "move",
+    "pose",
+    "stats",
+    "stop"
+   ],
+   "methods": [],
+   "constants": []
+  },
+  "Speaker": {
+   "functions": [
+    "get_volume",
+    "is_busy",
+    "is_playing",
+    "play",
+    "set_url",
+    "set_volume",
+    "stats",
+    "stop",
+    "stop_all"
+   ],
+   "methods": [],
+   "constants": [
+    "REASON_COMPLETED",
+    "REASON_ERROR",
+    "REASON_PREEMPTED",
+    "REASON_STOPPED"
+   ]
+  },
+  "Sprite": {
+   "functions": [
+    "image",
+    "new",
+    "solid"
+   ],
+   "methods": [
+    "destroy",
+    "get_pos",
+    "get_size",
+    "hit_test",
+    "intersects",
+    "set_flip",
+    "set_frame",
+    "set_opacity",
+    "set_pivot",
+    "set_pos",
+    "set_rotation",
+    "set_scale",
+    "set_visible",
+    "set_z",
+    "to_back",
+    "to_front"
+   ],
+   "constants": []
+  },
+  "Voice": {
+   "functions": [
+    "is_available",
+    "set_keywords",
+    "start",
+    "stop"
+   ],
+   "methods": [],
+   "constants": []
+  }
+ },
+ "hooks": [
+  "game_end",
+  "game_start",
+  "on_home",
+  "on_input",
+  "on_input_lost",
+  "on_pack_cmd",
+  "on_sound_end",
+  "on_sound_lost",
+  "on_tick",
+  "on_voice_event"
+ ],
+ "internal": {
+  "on_pack_cmd": "host command channel of built-in packs",
+  "Engine.stack_hwm": "firmware stack sizing probe"
+ },
+ "a2a_only": {
+  "Engine.report_result": "talk-flow (A2A) sessions: reports the outcome string to the server"
+ }
+}

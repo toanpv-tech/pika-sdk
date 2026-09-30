@@ -1,0 +1,4 @@
+# Game packs carry s.json checksums of their exact bytes. Line-ending
+# conversion on checkout would change those bytes and the robot would reject
+# the pack, so git must store and restore these files byte for byte.
+examples/** -text

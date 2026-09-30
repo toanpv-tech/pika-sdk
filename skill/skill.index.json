@@ -1,30 +1,80 @@
 {
-  "schema": "pika-sdk-skill/1",
-  "name": "Vibe-code a Pika game",
-  "description": "Machine-first knowledge pack: mọi thứ một AI cần để sinh ra một game Pika chạy được ngay trên engine thật, không bịa API. Đọc SKILL.md trước.",
-  "engine_api": { "min": "1.1.1" },
+  "schema": "pika-sdk-skill/2",
+  "name": "Build a Pika robot game",
+  "description": "Knowledge pack for AI coding assistants: everything needed to design a browser demo, write or port a Pika Engine Lua game that runs on the real robot, and diagnose it, without inventing APIs. Read SKILL.md first. The SDK version is sdk_version at the SDK root; people start at ../docs/README.md.",
+  "lua_version": "5.5",
   "entry": "SKILL.md",
+  "load_values": {
+    "always": "every task",
+    "on_demo": "mode A: designing a browser demo on the kit",
+    "on_port": "mode C: porting a kit demo to Lua",
+    "on_manifest": "writing or changing manifest.json",
+    "multi_scene": "several screens, or more than ~300 lines",
+    "many_objects": "many sprites, big art, or frame drops",
+    "on_require": "using require / libraries",
+    "on_error": "any failure, odd behaviour or robot log (mode D)",
+    "on_warning": "a ⚠️ label, or a fact the contract does not settle",
+    "on_task": "the user's task matches the recipe's trigger"
+  },
   "files": [
-    { "file": "SKILL.md",          "title": "Cách vibe-code một game Pika", "role": "entry",       "summary": "Điểm vào. Luật vàng, luồng làm việc, khuôn game tối thiểu, trỏ tới các file còn lại." },
-    { "file": "workflow.md",       "title": "Quy trình ý tưởng → game (cho người)", "role": "human-guide", "summary": "6 bước cho người có ý tưởng dùng AI vibe-code: brief, đưa skill cho AI, copy example, Run hot-reload, export. Kèm mẫu prompt điền-vào-chỗ-trống." },
-    { "file": "start-prompt.md",   "title": "Prompt bắt đầu vibe-code (đã có PRD)", "role": "human-guide", "summary": "Prompt copy-dán khi đã có file PRD: ép AI đọc skill/ trước (kể cả từ project mới qua git URL/local), đọc PRD, hỏi lại map về ràng buộc engine rồi mới code." },
-    { "file": "api-contract.md",   "title": "API Contract",                 "role": "reference",   "summary": "Danh sách API TỒN TẠI (signature + ràng buộc) + API KHÔNG tồn tại. Nguồn chống-bịa." },
-    { "file": "constraints.md",    "title": "Hard Constraints",             "role": "reference",   "summary": "Giới hạn cứng của engine: pool, kích thước, timing, sandbox. Vi phạm = crash/fail-close." },
-    { "file": "pitfalls.md",       "title": "Pitfalls",                     "role": "reference",   "summary": "Fail-mode đã gặp thật → fix một dòng. Đọc trước khi debug." }
+    { "file": "SKILL.md", "title": "Build a Pika robot game", "role": "entry", "load": "always", "tokens": 2000, "generated": false,
+      "summary": "Golden rules G1-G13 (rule, why, check), mode routing A-D, load table, pack and manifest essentials, minimal game, self-check loop and hand-off." },
+    { "file": "api-contract.md", "title": "API contract", "role": "reference", "load": "always", "tokens": 7000, "generated": true,
+      "summary": "Every API with signature, return, failure behaviour and the key rule; hooks and how they are bound; sandbox; calls that do not exist. Rendered from contract/semantics.json." },
+    { "file": "constraints.md", "title": "Hard constraints", "role": "reference", "load": "always", "tokens": 1600, "generated": true,
+      "summary": "Every limit with its constraints.json key and what happens past it, design facts, known issues (KI-*) and PC-vs-robot gaps (PC-*)." },
+    { "file": "lua-language.md", "title": "Lua on the Pika Engine", "role": "reference", "load": "always", "tokens": 1400, "generated": false,
+      "summary": "LUA-* rules: hooks at top level, handles referenced, 32-bit integers, nested C-call limit, Lua 5.5 differences, sandbox, where smoke differs from the robot." },
+    { "file": "demo-kit.md", "title": "Design a browser demo with the kit", "role": "procedure", "load": "on_demo", "tokens": 2300, "generated": false,
+      "summary": "Mode A. Rules R1-R9, JS to Lua table, lint codes with severity, the S3 gate and the hand-off." },
+    { "file": "porting.md", "title": "Port a kit demo to a Lua pack", "role": "procedure", "load": "on_port", "tokens": 1500, "generated": false,
+      "summary": "Mode C. PORT-* rules and the mechanical steps from a demo and pika-spec.json to a pack, through S5 and S6." },
+    { "file": "game-architecture.md", "title": "Game architecture", "role": "reference", "load": "multi_scene", "tokens": 1600, "generated": false,
+      "summary": "ARCH-* rules: rules split from wiring, fixed step on Timer.millis(), scenes as state inside one on_tick, pools, layering, handle lifetime." },
+    { "file": "performance.md", "title": "Performance and memory", "role": "reference", "load": "many_objects", "tokens": 1500, "generated": false,
+      "summary": "PERF-* rules: calls known to be expensive, send-if-changed, loading across frames, PSRAM budget, the display lock during a frame." },
+    { "file": "libs-catalog.md", "title": "Shipped Lua libraries", "role": "reference", "load": "on_require", "tokens": 1000, "generated": false,
+      "summary": "Exact exported functions of every module in libraries/, dependencies and caveats." },
+    { "file": "pitfalls.md", "title": "Pitfalls", "role": "reference", "load": "on_error", "tokens": 3800, "generated": false,
+      "summary": "Symptom and log signature → cause → fix → evidence, one row per reproducible failure (P1-P35)." },
+    { "file": "open-questions.md", "title": "Open questions", "role": "reference", "load": "on_warning", "tokens": 1100, "generated": false,
+      "summary": "Questions the firmware does not settle yet, each with a safe way and the files to update, plus closed questions with their evidence." }
   ],
   "recipes": {
     "path": "recipes",
     "items": [
-      { "file": "recipes/move-a-sprite.md",       "title": "Di chuyển sprite theo nút" },
-      { "file": "recipes/play-sound-on-hit.md",    "title": "Phát tiếng khi va chạm" },
-      { "file": "recipes/voice-keyword-trigger.md","title": "Kích hoạt bằng lệnh giọng nói" },
-      { "file": "recipes/settings-menu.md",        "title": "Menu cài đặt trước khi vào game" }
+      { "file": "recipes/move-a-sprite.md", "title": "Move a sprite with the buttons", "load": "on_task", "trigger": "movement, player control", "tokens": 700 },
+      { "file": "recipes/play-sound-on-hit.md", "title": "Play a sound on a collision", "load": "on_task", "trigger": "sound effects, collisions, on_sound_end", "tokens": 800 },
+      { "file": "recipes/voice-keyword-trigger.md", "title": "Trigger actions with voice keywords", "load": "on_task", "trigger": "Voice, keywords, speaking", "tokens": 1000 },
+      { "file": "recipes/settings-menu.md", "title": "Pre-game settings screen", "load": "on_task", "trigger": "settings, options, libraries/settings", "tokens": 950 },
+      { "file": "recipes/leaderboard.md", "title": "Leaderboard on the game-over screen", "load": "on_task", "trigger": "Ranking, scores, leaderboard", "tokens": 500 },
+      { "file": "recipes/localized-text.md", "title": "Localized text and glyph coverage", "load": "on_task", "trigger": "params.language, translations, fonts", "tokens": 800 },
+      { "file": "recipes/scenes.md", "title": "Several scenes", "load": "multi_scene", "trigger": "title, play and result screens", "tokens": 800 }
     ]
   },
   "templates": {
     "path": "templates",
     "items": [
-      { "dir": "minimal-game", "title": "Game tối thiểu chạy được", "entry": "scripts/main.lua" }
+      { "dir": "minimal-game", "title": "Minimal runnable game", "entry": "scripts/main.lua", "load": "always" },
+      { "dir": "structured-game", "title": "Multi-scene game, rules split from wiring", "entry": "scripts/main.lua", "load": "multi_scene" }
     ]
-  }
+  },
+  "tools": [
+    { "file": "../tools/smoke.py", "title": "Lint and smoke-run a pack (gates S0, S5, S7)", "load": "always",
+      "run": "python tools/smoke.py <pack> \"<steps>\"", "setup": "pip install -r tools/requirements.txt",
+      "pass": "exit 0 and last line '0 error(s), N warning(s)'",
+      "summary": "Runs the pack in real Lua 5.5 against a stub built from the contract, with the robot's rules (pools, transform gate, voice timing, hooks bound once, handle GC). Codes are listed at the top of the file." },
+    { "file": "../tools/playtest.js", "title": "Headless demo run (gate S3)", "load": "on_demo",
+      "run": "node tools/playtest.js <demo>/index.html \"<steps>\" [--out <dir>]", "setup": "cd tools && npm install && npx playwright install chromium",
+      "pass": "exit 0, no JS-ERROR line; writes pika-spec.json and shot.png",
+      "summary": "Plays a kit demo in headless Chromium and exports its spec and lints." },
+    { "file": "../tools/check_spec.py", "title": "Demo hand-off gate (gate S3)", "load": "on_demo",
+      "run": "python tools/check_spec.py <demo>/pika-spec.json", "setup": "pip install -r tools/requirements.txt",
+      "pass": "'Verdict: READY TO PORT', exit 0",
+      "summary": "Rechecks glyph coverage, file sizes, alias and path lengths and blocking lints; prints the To record list." },
+    { "file": "../tools/png2rgb565.py", "title": "PNG to .rgb565 image or frame strip", "load": "on_port",
+      "run": "python tools/png2rgb565.py <out.rgb565> <in.png>... [--bg 0xRRGGBB]", "setup": "none (standard library)",
+      "pass": "prints the Sprite.new(...) call to use",
+      "summary": "Converts PNGs to raw little-endian RGB565 as Sprite.new reads it; several same-size inputs make a strip." }
+  ]
 }

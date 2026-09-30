@@ -1,0 +1,329 @@
+{
+ "schema": "pika-contract-semantics/1",
+ "note": "Hand-written behaviour of every entry in api.json. tools/gen_contract.py renders docs/reference/api.md, docs/reference/known-issues.md, skill/api-contract.md and skill/constraints.md from this file plus constraints.json. {{key}} is a value from constraints.json (limits or derived); never type a limit as a literal. Every entry cites the firmware source that proves it (paths relative to head_esp32/components/game_engine/src unless prefixed).",
+
+ "conventions": [
+  "**Failure modes.** Each call fails in one of these ways, shown in the *Bad argument* and *Failure* columns: **raise** (throws a Lua error; uncaught it aborts the hook, see [Hooks](#hooks) for what that does), **false** (returns `false`), **nil, reason** (returns `nil` and a string; test the first value), **no-op** (does nothing).",
+  "**Families.** Display and input (`Sprite`, `Text`, `Shape`, `Anim`, `Input`) raise on a wrong argument type. Robot peripherals (`Speaker`, `Servo`, `Led`) never raise: a bad argument returns `false`. `Voice.set_keywords` raises on a non-table list. Status calls (`Timer`, `Ranking`, `Engine`, `print`) validate little.",
+  "**Integers.** Arguments documented as integers (`x`, `y`, `w`, `h`, `z`, frame index, Shape coordinates, scale, rotation) raise `number has no integer representation` on a fractional number. `2.0` is accepted. Round with `math.floor(x + 0.5)`.",
+  "**Integers are {{lua_int_bits}}-bit on the robot** (`LUA_USE_C89`): `math.maxinteger` is 2^31−1 and integer overflow wraps. Floats are doubles.",
+  "**Handles.** `Sprite`, `Text`, `Shape` and `Anim` are userdata; call methods with a colon (`spr:set_pos(x, y)`). `:destroy()` is idempotent; after it every method is a no-op (getters return zeros, boolean methods `false`). Text and Shape no-ops log a warning; Sprite and Anim no-ops are silent.",
+  "**Keep a reference to every handle.** Handles have `__gc`: a Sprite, Text, Shape or Anim that no Lua variable references is destroyed at the next garbage collection and disappears from the screen. A dropped Text or Shape keeps its pool slot until then. Handles also support `<close>`. Everything is freed when the game ends.",
+  "**Paths** are relative to the pack folder. The engine prefixes `/sd/games/<game_id>/`; the whole path must stay under {{sandbox_path_max}} bytes, so a relative path may use at most {{sandbox_rel_path_budget}} bytes minus the length of the game id. An absolute path, a backslash, a control character, or an empty, `.` or `..` segment (`a//b`, trailing `/`) raises `unsafe ... path`.",
+  "**Colours.** `Text` and `Shape` take `0xRRGGBB`. `Sprite.solid` takes 16-bit RGB565. Mixing them gives wrong colours, not an error.",
+  "**Reading an unknown field** of an engine global or handle gives `nil` (feature detection works); calling it raises. `pika` is an empty global table."
+ ],
+
+ "hooks_intro": "Define hooks as globals in the entry script; all are optional. Each call runs under the hook watchdog ({{hook_watchdog_ms}} ms); a call that runs longer raises `watchdog: Lua pcall exceeded ...`. The watchdog is checked every {{watchdog_hook_count}} Lua instructions, so one long native call (a big image load) is only caught when it returns. A separate stall detector ends a game whose frame loop makes no progress for {{stall_detect_sec}} s.",
+ "hooks": [
+  {"name": "game_start", "sig": "game_start(params)", "when": "Once, after the entry script's top level ran and after `on_tick`/`on_input` were bound.", "args": "`params`: table, see [params](#params).", "bound": "looked up at call", "on_error": "Load fails (`game.error phase=load`); `game_end` is not called.", "src": ["core/game_pack.c:320", "core/lua_vm.c:584-620"]},
+  {"name": "on_tick", "sig": "on_tick(dt_ms)", "when": "Every frame.", "args": "`dt_ms`: always {{dt_ms}} (nominal), see [Timing](#timing).", "bound": "**once**, right after the top level runs", "on_error": "Game ends.", "src": ["core/lua_vm.c:71-76", "core/engine_core.c:1329-1344"]},
+  {"name": "on_input", "sig": "on_input(action, phase, hold_ms)", "when": "Once per button event per action bound to that button, before `on_tick` of the same frame.", "args": "`action`: manifest action name; `phase`: `Input.PRESS`, `Input.RELEASE` or `Input.REPEAT`; `hold_ms`: integer.", "bound": "**once**, right after the top level runs", "on_error": "Game ends.", "src": ["core/lua_vm.c:71-76", "core/engine_core.c:1328"]},
+  {"name": "on_input_lost", "sig": "on_input_lost(count)", "when": "Button events were dropped because the input queue ({{input_ring_slots}} events) overflowed.", "args": "`count`: events lost since the last report.", "bound": "looked up at call", "on_error": "Game ends.", "src": ["subsystems/input/input.c"]},
+  {"name": "on_sound_end", "sig": "on_sound_end(alias, reason)", "when": "At the start of the frame after a sound finished, was stopped or was preempted.", "args": "`alias`: string; `reason`: `Speaker.REASON_*`.", "bound": "looked up at call", "on_error": "Game ends.", "src": ["subsystems/sound/sound.c:691-790", "core/engine_core.c:1327"]},
+  {"name": "on_sound_lost", "sig": "on_sound_lost(count)", "when": "`on_sound_end` events were dropped because the finish queue ({{sound_finish_ring}} events) overflowed.", "args": "`count`: events lost since the last report.", "bound": "looked up at call", "on_error": "Game ends.", "src": ["subsystems/sound/sound.c"]},
+  {"name": "on_voice_event", "sig": "on_voice_event(e)", "when": "Between frames, for each voice frame (see [Voice](#voice)).", "args": "`e`: table, or the raw JSON string when the frame is not valid JSON or exceeds {{voice_event_max_depth}} levels / {{voice_event_max_nodes}} nodes.", "bound": "looked up at call", "on_error": "Logged; the game continues (the session still reports `end=err`).", "src": ["subsystems/voice/voice_router.c"]},
+  {"name": "on_home", "sig": "on_home()", "when": "Between frames, on a short press of HOME.", "args": "none. Return a truthy value to keep the game running (e.g. to open a pause screen).", "bound": "looked up at call", "on_error": "Game ends (clean exit). `nil`, `false` or a missing hook also end it.", "src": ["core/engine_core.c:1147-1162", "core/lua_vm.c:696-712"]},
+  {"name": "game_end", "sig": "game_end()", "when": "Once during teardown, however a started game ends (not after a failed load). Runs after `game.stop` is logged.", "args": "none", "bound": "looked up at call", "on_error": "Ignored.", "src": ["core/game_pack.c:339"]},
+  {"name": "on_pack_cmd", "sig": "on_pack_cmd(cmd)", "when": "**Internal, not for game code.** Host command channel of built-in packs.", "args": "", "bound": "looked up at call", "on_error": "Ignored.", "src": ["core/engine_core.c:1173-1190"]}
+ ],
+ "hook_rules": [
+  "**Define `on_tick` and `on_input` at the top level of the entry script.** They are bound once, before `game_start` runs; assigning them later (`on_tick = play_tick` inside `game_start` or a scene change) is silently ignored. Switch behaviour with a state variable inside one `on_tick`. Other hooks are looked up at every call.",
+  "**Frame order.** Each frame: `on_sound_end`/`on_sound_lost` → `on_input`/`on_input_lost` → `on_tick` → queued servo, LED and sound-stop commands are sent → the active `Anim` advances at most one frame → all display changes are published as one screen update. `on_voice_event` and `on_home` run between frames.",
+  "**The display lock is held for the whole tick.** Everything from the sound drain to the screen publish runs under the LVGL lock, so an SD read (`set_frame`), a PNG decode or a long Lua loop in a hook also freezes screen refresh for that time.",
+  "**HOME held for {{home_force_exit_ms}} ms or longer force-exits** the game whatever `on_home` returns (`end=home`). Only short presses reach `on_home`."
+ ],
+ "timing": [
+  "`dt_ms` is always {{dt_ms}} (1000 / {{target_fps}}), not the measured frame time.",
+  "The frame period is {{tick_period_ms}} ms: the RTOS tick is {{freertos_tick_ms}} ms, so the {{dt_ms}} ms target rounds down to whole ticks. That caps the loop at about {{tick_hz_max}} frames per second. A game that adds `dt_ms` every frame therefore runs about 10% fast when frames are on time and slow when they are late. **Use `Timer.millis()` for anything time-based.**"
+ ],
+ "params": [
+  {"field": "is_a2a", "type": "boolean", "meaning": "`true` when the game was started inside a talk-flow (A2A) session."},
+  {"field": "language", "type": "string", "meaning": "ISO 639-1 code of the robot's UI language, e.g. `\"en\"`."},
+  {"field": "other fields", "type": "any", "meaning": "Start parameters from the server, decoded from JSON: at most {{start_params_max_bytes}} bytes and {{start_params_max_nodes}} nodes. Longer, malformed or non-object parameters give an empty table plus the two fields above."}
+ ],
+ "params_src": ["core/lua_vm.c:584-611", "core/engine_internal.h:52", "bindings/bindings.h:131"],
+
+ "globals": {
+  "Engine": {
+   "intro": "",
+   "calls": [
+    {"name": "Engine.exit", "sig": "Engine.exit([reason])", "ret": "nothing", "bad": "raise if `reason` is not a string or number", "fail": "—", "notes": "Schedules a normal stop; the current hook runs to its end, so `return` right after the call. `game_end()` runs during teardown. `reason` (default `\"lua\"`) is logged.", "src": ["bindings/bind_engine.c"]},
+    {"name": "Engine.report_result", "sig": "Engine.report_result{event = s}", "ret": "`true`", "bad": "raise if the argument is not a table", "fail": "nil, reason: `bad_event` (missing, empty or over {{report_event_max_bytes}} bytes), `encode_failed`, `payload_too_big`, `send_failed`", "notes": "**Talk-flow (A2A) only** (`params.is_a2a`). Hands the outcome string (e.g. `\"win\"`) to the conversation, which receives it when the game ends. Does not end the game. Outside talk-flow nothing uses it.", "src": ["bindings/bind_engine.c:42", "back_esp32/main/src/application/application.cpp:339-348"]},
+    {"name": "Engine.stack_hwm", "sig": "Engine.stack_hwm()", "ret": "integer", "bad": "—", "fail": "—", "notes": "**Internal, not for game code.** Firmware stack sizing probe.", "src": ["bindings/bind_engine.c"]}
+   ]
+  },
+  "Timer": {
+   "intro": "",
+   "calls": [
+    {"name": "Timer.millis", "sig": "Timer.millis()", "ret": "integer", "bad": "—", "fail": "—", "notes": "Monotonic milliseconds since boot, the only real clock. It is a {{lua_int_bits}}-bit integer and turns negative after about 24.8 days of uptime; compare differences (`now - t0`), never absolute values.", "src": ["bindings/bind_engine.c:146"]}
+   ]
+  },
+  "print": {
+   "intro": "",
+   "calls": [
+    {"name": "print", "sig": "print(...)", "ret": "nothing", "bad": "—", "fail": "—", "notes": "Writes one line `[lua] a<TAB>b...` to the robot's serial log (arguments through `tostring`). The serial console is slow and the time is spent inside your hook: never print every frame.", "src": ["bindings/bind_engine.c", "core/engine_core.c:136"]}
+   ]
+  },
+  "Input": {
+   "intro": "Buttons are addressed by the action names declared in `manifest.json` (`input.actions`). Without that block the engine defines `confirm` (enter), `left` and `right`. The robot has three game buttons: `button:left`, `button:enter`, `button:right`. HOME is not an action; it calls `on_home()`.",
+   "calls": [
+    {"name": "Input.is_down", "sig": "Input.is_down(action)", "ret": "boolean", "bad": "raise if `action` is missing or not a string", "fail": "`false` for an unknown action", "notes": "`true` while any button bound to the action is held. Poll it for smooth movement.", "src": ["bindings/bind_input.c"]},
+    {"name": "Input.just_pressed", "sig": "Input.just_pressed(action)", "ret": "boolean", "bad": "raise", "fail": "`false`", "notes": "`true` in the frame the button went down. A press and release in the same frame make `just_pressed` and `just_released` both `true`.", "src": ["subsystems/input/input.c:59-77"]},
+    {"name": "Input.just_released", "sig": "Input.just_released(action)", "ret": "boolean", "bad": "raise", "fail": "`false`", "notes": "`true` in the frame the button went up.", "src": ["subsystems/input/input.c:59-77"]},
+    {"name": "Input.hold_ms", "sig": "Input.hold_ms(action)", "ret": "integer", "bad": "raise", "fail": "`0`", "notes": "Hold time carried by the last `REPEAT`/`RELEASE` event: `0` until the first `REPEAT` ({{button_repeat_delay_ms}} ms after the press, then every {{button_repeat_rate_ms}} ms), kept at the release value after `RELEASE`, at most 65535. Largest value across bound buttons.", "src": ["subsystems/input/input.c:59-77", "back_esp32/main/src/driver/button/button.h:117-118"]},
+    {"name": "Input.actions", "sig": "Input.actions()", "ret": "table", "bad": "—", "fail": "—", "notes": "Array of action names in manifest order.", "src": ["bindings/bind_input.c"]},
+    {"name": "Input.stats", "sig": "Input.stats()", "ret": "table", "bad": "—", "fail": "—", "notes": "`{events_total, events_delta, dropped_total, seq_gaps}`. `events_delta`: events since the previous call; `dropped_total`: queue overflows; `seq_gaps`: events lost between the button board and the engine.", "src": ["bindings/bind_input.c"]}
+   ],
+   "constants": [
+    {"name": "Input.PRESS", "value": "0", "meaning": "Button went down"},
+    {"name": "Input.RELEASE", "value": "1", "meaning": "Button went up"},
+    {"name": "Input.REPEAT", "value": "2", "meaning": "Button still held; first after {{button_repeat_delay_ms}} ms, then every {{button_repeat_rate_ms}} ms"}
+   ],
+   "after": ["Compare `phase` with the constants, not with numbers."]
+  },
+  "Sprite": {
+   "intro": "Images on the {{screen_w}} × {{screen_h}} screen. There is no sprite count limit; free PSRAM is the limit. PSRAM per sprite: `w*h*3` bytes for a PNG that can carry transparency (RGBA, grey+alpha, or any PNG with a `tRNS` chunk; RGB565 plus an 8-bit alpha plane), `w*h*2` for a PNG without alpha (RGB, grey or palette without `tRNS`), a raw `.rgb565` file or a solid. The engine decides from the PNG header, so an RGBA PNG whose alpha is always 255 still costs `w*h*3`: export opaque images as RGB PNG or `.rgb565`. While a PNG decodes, the whole file is also held in PSRAM.\n\nA new sprite is placed at (0, 0) on top of everything created before it, but **stays hidden until its first `:set_pos` or `:set_visible`**. A sprite you never position is never drawn.",
+   "calls": [
+    {"name": "Sprite.image", "sig": "Sprite.image(path)", "ret": "sprite", "bad": "raise on a non-string or unsafe path", "fail": "nil, msg: e.g. `image load failed: assets/a.png (ESP_ERR_NOT_FOUND)` or `(ESP_ERR_NO_MEM)`", "notes": "Decodes a PNG, keeping its alpha. File at most {{png_max_file_mib}} MiB, image at most {{img_max_w}} × {{img_max_h}}.", "src": ["bindings/bind_sprite.c:113-143", "render/asset_loader.c:113-198"]},
+    {"name": "Sprite.new", "sig": "Sprite.new(path, w, h)", "ret": "sprite", "bad": "raise on a non-string or unsafe path, or non-integer `w`/`h`", "fail": "nil, msg", "notes": "Loads raw RGB565 pixels (2 bytes per pixel, little-endian, row-major, no header); the file must hold at least `w*h*2` bytes. At most {{img_max_w}} × {{img_max_h}}. Cheapest opaque image and the usual base for frame strips.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite.solid", "sig": "Sprite.solid(w, h, rgb565)", "ret": "sprite", "bad": "raise when `w` is not 1..{{img_max_w}} or `h` not 1..{{img_max_h}}", "fail": "nil, `\"oom\"` or `\"sprite create failed\"`", "notes": "Filled rectangle, no file. The colour is **RGB565** (`0xF800` red, `0x07E0` green, `0x001F` blue); only the low 16 bits are used.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:set_pos", "sig": "spr:set_pos(x, y)", "ret": "nothing", "bad": "raise on non-integer", "fail": "—", "notes": "Top-left corner in screen pixels; off-screen is allowed. Also makes a new sprite visible.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:get_pos", "sig": "spr:get_pos()", "ret": "x, y", "bad": "raise if `spr` is not a sprite", "fail": "—", "notes": "", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:get_size", "sig": "spr:get_size()", "ret": "w, h", "bad": "raise", "fail": "—", "notes": "Source size; `set_scale` does not change it.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:set_visible", "sig": "spr:set_visible(b)", "ret": "nothing", "bad": "raise", "fail": "—", "notes": "Truthiness of `b`.", "src": ["bindings/bind_sprite.c:191"]},
+    {"name": "Sprite:set_opacity", "sig": "spr:set_opacity(a)", "ret": "nothing", "bad": "raise on non-number", "fail": "—", "notes": "0..255, rounded and clamped.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:set_z", "sig": "spr:set_z(i)", "ret": "nothing", "bad": "raise on non-integer", "fail": "—", "notes": "Moves the object to child index `i` of the screen. Sprites, Text labels, Shape lines and Anim canvases share one list; a larger index draws on top. `i` is clamped to `0..count-1`, so a large value means \"top\".", "src": ["render/lvgl_renderer.c"]},
+    {"name": "Sprite:to_front", "sig": "spr:to_front()", "ret": "nothing", "bad": "raise", "fail": "—", "notes": "Same as the highest index.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:to_back", "sig": "spr:to_back()", "ret": "nothing", "bad": "raise", "fail": "—", "notes": "Same as index 0.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:set_flip", "sig": "spr:set_flip(h, v)", "ret": "boolean", "bad": "raise", "fail": "`false`", "notes": "Sets the absolute flip state (not a toggle) by rewriting every pixel (O(w·h)), and only when the state differs from the recorded one. Call it on state changes, not every frame. **Do not combine with `set_frame`** ([KI-FLIP-FRAME](@docs/reference/known-issues.md#ki-flip-frame)).", "src": ["render/lvgl_renderer.c:1060-1126"]},
+    {"name": "Sprite:set_frame", "sig": "spr:set_frame(path, i)", "ret": "boolean", "bad": "raise on unsafe path or non-integer `i`", "fail": "`false` when the file is missing or `i` is past the end", "notes": "Overwrites the pixels with frame `i` (0-based) of a **raw strip file**: frames stored back to back in the sprite's own pixel format, `w*h*2` bytes per frame for `Sprite.new`, `Sprite.solid` and an opaque PNG sprite, `w*h*3` for a PNG sprite with alpha. Never a PNG file: a PNG path is read as raw bytes and shows garbage. Reads the SD card on every call, under the display lock.", "src": ["render/lvgl_renderer.c:952-979", "bindings/bind_sprite.c:113"]},
+    {"name": "Sprite:set_scale", "sig": "spr:set_scale(n)", "ret": "boolean", "bad": "raise on non-integer", "fail": "`false` when the sprite is too large to transform", "notes": "`256` = 1×, `512` = 2×, `128` = ½×. Clamped to 1..4096, then to `{{img_max_w}}*256 / max(w, h)` so the scaled sprite fits the screen width. See [Transform limit](#transform-limit).", "src": ["render/lvgl_renderer.c:1149-1165"]},
+    {"name": "Sprite:set_rotation", "sig": "spr:set_rotation(deg10)", "ret": "boolean", "bad": "raise on non-integer", "fail": "`false` when the sprite is too large to transform", "notes": "Tenths of a degree (`900` = 90°), wraps modulo 3600.", "src": ["render/lvgl_renderer.c:1167"]},
+    {"name": "Sprite:set_pivot", "sig": "spr:set_pivot(x, y)", "ret": "boolean", "bad": "raise on non-integer", "fail": "—", "notes": "Origin of scale and rotation in sprite-local pixels; default is the centre. Not size-checked, but has no effect on a sprite that cannot be transformed.", "src": ["render/lvgl_renderer.c"]},
+    {"name": "Sprite:hit_test", "sig": "spr:hit_test(x, y)", "ret": "boolean", "bad": "raise", "fail": "—", "notes": "Point inside `[x, x+w) × [y, y+h)`. Ignores visibility, scale and rotation.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:intersects", "sig": "spr:intersects(other)", "ret": "boolean", "bad": "raise if `other` is not a sprite", "fail": "—", "notes": "Axis-aligned rectangles overlap. Same rules as `:hit_test`.", "src": ["bindings/bind_sprite.c"]},
+    {"name": "Sprite:destroy", "sig": "spr:destroy()", "ret": "nothing", "bad": "—", "fail": "—", "notes": "Frees the pixels now. Idempotent.", "src": ["bindings/bind_sprite.c:356-363"]}
+   ],
+   "after": [
+    "### Transform limit",
+    "`:set_scale` and `:set_rotation` work only when **both** the sprite's width and height are at most {{transform_max_px}} px (`transform_max_px`). Larger sprites return `false`, nothing changes, and the refusal is logged once per sprite: `set_scale refused: sprite WxH exceeds {{transform_max_px}} px transform limit`. Transforms are applied at draw time and cost CPU every frame the sprite is drawn: use them for short effects."
+   ]
+  },
+  "Text": {
+   "intro": "Retained text labels. At most {{text_slots}} exist at a time (`text_slots`). Text does not wrap and there is no width query: break lines in your data with `\\n` and check the longest string in the simulator.",
+   "calls": [
+    {"name": "Text.new", "sig": "Text.new(str, x, y)", "ret": "text", "bad": "raise on non-string `str` or non-integer `x`/`y`", "fail": "nil, `\"pool_full\"` ({{text_slots}} labels live, or out of memory) or `\"text_create_failed\"`", "notes": "Shown immediately, top-left at (x, y), white, default font.", "src": ["bindings/bind_engine.c:218"]},
+    {"name": "Text:set", "sig": "t:set(str)", "ret": "nothing", "bad": "raise on non-string", "fail": "no-op on a destroyed label", "notes": "Changes the text. A string under 64 bytes that equals the current one is skipped by the engine; the cost left is building the string in Lua.", "src": ["bindings/bind_engine.c:233", "render/lvgl_renderer.c:319-322"]},
+    {"name": "Text:move", "sig": "t:move(x, y)", "ret": "nothing", "bad": "raise on non-integer", "fail": "no-op", "notes": "Absolute top-left position.", "src": ["bindings/bind_engine.c:244"]},
+    {"name": "Text:align", "sig": "t:align(where[, dx, dy])", "ret": "nothing", "bad": "raise on non-string `where`", "fail": "nil, `\"unknown Text align: ...\"` or `\"stale_text\"`", "notes": "Aligns to the screen. `where`: `center`, `top`, `bottom`, `left`, `right`, `top_left`, `top_right`, `bottom_left`, `bottom_right`; `dx`, `dy` offset in px (default 0).", "src": ["bindings/bind_engine.c:249-274"]},
+    {"name": "Text:set_font", "sig": "t:set_font(path[, size])", "ret": "nothing", "bad": "raise on non-string `path`", "fail": "nil, msg: unsafe path, bad file, stale label, or font cache full", "notes": "TrueType font from the pack, file at most {{font_max_file_kib}} KiB. `size` in px, default {{font_px_default}}, clamped to {{font_px_min}}..{{font_px_max}}. See [Fonts](#fonts).", "src": ["bindings/bind_engine.c:296"]},
+    {"name": "Text:set_color", "sig": "t:set_color(rgb)", "ret": "nothing", "bad": "raise on non-integer", "fail": "no-op", "notes": "`0xRRGGBB`.", "src": ["bindings/bind_engine.c:315"]},
+    {"name": "Text:show", "sig": "t:show(b)", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Show or hide.", "src": ["bindings/bind_engine.c:323"]},
+    {"name": "Text:destroy", "sig": "t:destroy()", "ret": "nothing", "bad": "—", "fail": "—", "notes": "Frees the slot for a new `Text.new`. Idempotent.", "src": ["bindings/bind_engine.c:341-350"]}
+   ],
+   "skill_after": [1, 2],
+   "after": [
+    "### Fonts",
+    "A face is a (path, size) pair. The engine caches at most {{font_slots}} faces; labels using the same pair share one. A face used by a live label cannot be evicted, so a fifth distinct pair fails until a label using another face is destroyed or switched. Ship every font the pack uses; the default font does not cover every script.",
+    "Text has no `set_z`. Its stacking is its creation order, changed only when other objects call `:set_z`, `:to_front` or `:to_back`. Create labels last to keep them on top."
+   ]
+  },
+  "Shape": {
+   "intro": "Straight line segments. Each line is rasterised once into an anti-aliased image over its bounding box; changing geometry or style re-rasterises it. Good for a few long strokes (paths on a map, dividers), not for many short ones.",
+   "calls": [
+    {"name": "Shape.line", "sig": "Shape.line(x1, y1, x2, y2[, style])", "ret": "shape", "bad": "raise on non-integer or out-of-range coordinate, or bad `style`", "fail": "nil, reason (table below)", "notes": "Screen coordinates, `x` in −{{img_max_w}}..{{x2_max}}, `y` in −{{img_max_h}}..{{y2_max}}. Shown immediately.", "src": ["bindings/bind_engine.c:505"]},
+    {"name": "Shape:set_points", "sig": "s:set_points(x1, y1, x2, y2)", "ret": "nothing", "bad": "raise as `Shape.line`", "fail": "nil, reason", "notes": "Moves the endpoints; the same points again cost nothing. On failure the line keeps its old picture.", "src": ["bindings/bind_engine.c"]},
+    {"name": "Shape:set_style", "sig": "s:set_style(style)", "ret": "nothing", "bad": "raise on a non-table or bad field", "fail": "nil, reason", "notes": "Replaces the **whole** style: omitted fields return to their defaults.", "src": ["bindings/bind_engine.c"]},
+    {"name": "Shape:set_opacity", "sig": "s:set_opacity(a)", "ret": "nothing", "bad": "raise on non-integer (unlike `spr:set_opacity`)", "fail": "no-op", "notes": "0..255, clamped.", "src": ["bindings/bind_engine.c:602"]},
+    {"name": "Shape:set_z", "sig": "s:set_z(i)", "ret": "nothing", "bad": "raise on non-integer", "fail": "no-op", "notes": "Same child index as `spr:set_z`.", "src": ["bindings/bind_engine.c:612"]},
+    {"name": "Shape:set_visible", "sig": "s:set_visible(b)", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Show or hide.", "src": ["bindings/bind_engine.c:622"]},
+    {"name": "Shape:destroy", "sig": "s:destroy()", "ret": "nothing", "bad": "—", "fail": "—", "notes": "Frees the slot and its raster budget. Idempotent.", "src": ["bindings/bind_engine.c"]}
+   ],
+   "skill_after": [0, 1, 2, 3],
+   "after": [
+    "`reason` values for `Shape.line`, `:set_points` and `:set_style`:",
+    "| Reason | Cause |\n| --- | --- |\n| `pool_full` | {{line_slots}} lines already exist (`line_slots`) |\n| `bbox_too_large` | Bounding box plus padding (4 px + half the width on each side) exceeds {{img_max_w}} × {{img_max_h}} |\n| `no_mem` | All lines together would exceed the {{line_pool_kib}} KiB raster budget (`bbox_w * bbox_h * 3` bytes per line), or PSRAM is exhausted |\n| `shape_create_failed` | Screen not available |",
+    "`style` table, every field optional:",
+    "| Field | Type | Default | Rule |\n| --- | --- | --- | --- |\n| `width` | integer | `2` | Clamped to 1..{{line_width_max}} |\n| `color` | integer | `0xFFFFFF` | `0xRRGGBB` |\n| `dash` | `{on, off}` | solid | Exactly two integers, each 0..{{img_max_w}}; a `0` draws solid. Anything else raises. |\n| `cap` | string | `\"butt\"` | `\"butt\"` or `\"round\"`; anything else raises. |"
+   ]
+  },
+  "Anim": {
+   "intro": "Plays a GIF or MJPEG file (`.gif`, `.mjpeg`, `.mjpg`, case-insensitive). Several Anims can be loaded; only one plays at a time. Each loaded Anim holds its whole file plus a `w*h*2` canvas in PSRAM until destroyed. The canvas is opaque RGB565 with no alpha and starts black (`render/lvgl_renderer.c` `renderer_sprite_create_blank`): transparent GIF pixels show black, not what is behind the Anim.",
+   "calls": [
+    {"name": "Anim.new", "sig": "Anim.new(path)", "ret": "anim", "bad": "raise on unknown extension or unsafe path", "fail": "nil, msg", "notes": "Loads the file (at most {{anim_max_file_mib}} MiB) and creates the canvas; frame size at most {{img_max_w}} × {{img_max_h}}. Stops nothing. The canvas is hidden at (0, 0) until `:play`, `:set_pos` or `:set_visible`.", "src": ["render/anim.c:73-137"]},
+    {"name": "Anim:play", "sig": "a:play([loop])", "ret": "boolean", "bad": "raise if `a` is not an anim", "fail": "`false` on a decode error", "notes": "`a:play()` plays once; `a:play(true)` or `a:play{loop = true}` loops. Stops (and rewinds) any other playing Anim, shows the canvas and draws a frame at once. Rewinds to the first frame only if this Anim had ended (a finished one-shot or after `:stop`); on a paused or playing Anim it continues from the current frame.", "src": ["render/anim.c:164-193"]},
+    {"name": "Anim:pause", "sig": "a:pause()", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Freezes on the current frame.", "src": ["render/anim.c:195-198"]},
+    {"name": "Anim:resume", "sig": "a:resume()", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Continues after `:pause`; stops any other playing Anim.", "src": ["render/anim.c"]},
+    {"name": "Anim:stop", "sig": "a:stop()", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Stops and rewinds; the last frame stays on screen until hidden.", "src": ["render/anim.c"]},
+    {"name": "Anim:is_playing", "sig": "a:is_playing()", "ret": "boolean", "bad": "raise", "fail": "`false`", "notes": "`false` once a one-shot reaches its last frame: poll it to detect the end.", "src": ["render/anim.c"]},
+    {"name": "Anim:set_pos", "sig": "a:set_pos(x, y)", "ret": "nothing", "bad": "raise on non-integer", "fail": "no-op", "notes": "Top-left corner.", "src": ["bindings/bind_anim.c"]},
+    {"name": "Anim:set_visible", "sig": "a:set_visible(b)", "ret": "nothing", "bad": "raise", "fail": "no-op", "notes": "Show or hide.", "src": ["bindings/bind_anim.c:155"]},
+    {"name": "Anim:destroy", "sig": "a:destroy()", "ret": "nothing", "bad": "—", "fail": "—", "notes": "Frees the file buffer and canvas. Idempotent.", "src": ["bindings/bind_anim.c:197"]}
+   ],
+   "after": ["The engine advances the playing Anim by at most one frame per engine frame, so its rate is capped by the frame rate. Frame delays below {{anim_min_frame_ms}} ms are raised to {{anim_min_frame_ms}} ms. A decode error mid-playback stops it (counted as `animerr` in `game.warn`)."]
+  },
+  "Speaker": {
+   "intro": "Sounds are aliases declared in `manifest.json` (`audio.sounds`). There is **one channel**: a new `Speaker.play` preempts the current sound, which then receives `on_sound_end(alias, Speaker.REASON_PREEMPTED)`. There is no text-to-speech; every spoken line is a recorded file.",
+   "calls": [
+    {"name": "Speaker.play", "sig": "Speaker.play(alias)", "ret": "boolean", "bad": "`false`", "fail": "`false`: unknown alias, remote alias without a URL yet, within {{sound_cooldown_ms}} ms of the previous play (`cooldown_reject`), or audio request refused", "notes": "The automatic restart of a looping sound counts as a play for the cooldown.", "src": ["subsystems/sound/sound.c:396-465", "subsystems/sound/sound.c:745-757"]},
+    {"name": "Speaker.stop", "sig": "Speaker.stop(alias)", "ret": "boolean", "bad": "`false`", "fail": "`false` if `alias` is not the sound currently playing", "notes": "`on_sound_end(alias, Speaker.REASON_STOPPED)` arrives at the start of the **next** frame, also when called from inside `on_sound_end`.", "src": ["subsystems/sound/sound.c:487-490", "subsystems/sound/sound.c:691-700"]},
+    {"name": "Speaker.stop_all", "sig": "Speaker.stop_all()", "ret": "`true`", "bad": "—", "fail": "—", "notes": "Silences everything. The tracked current sound receives `REASON_STOPPED` next frame.", "src": ["subsystems/sound/sound.c:509"]},
+    {"name": "Speaker.is_playing", "sig": "Speaker.is_playing(alias)", "ret": "boolean", "bad": "`false`", "fail": "—", "notes": "`true` while `alias` is the current game sound, by engine bookkeeping (a prediction, not a hardware signal).", "src": ["bindings/bind_speaker.c"]},
+    {"name": "Speaker.is_busy", "sig": "Speaker.is_busy()", "ret": "boolean", "bad": "—", "fail": "—", "notes": "`true` while the speaker plays anything, including non-game audio.", "src": ["bindings/bind_speaker.c"]},
+    {"name": "Speaker.set_url", "sig": "Speaker.set_url(alias, url)", "ret": "boolean", "bad": "`false`", "fail": "`false` for a `path` alias, an undeclared alias or a bad URL", "notes": "Sets or overrides the URL of an alias declared with `\"remote\": true` or `\"url\"`. `url` must start with `http://` or `https://` (https is rewritten to http), contain only printable non-space ASCII and be at most {{sound_url_chars}} bytes.", "src": ["subsystems/sound/sound.c:162", "subsystems/sound/sound.c:240"]},
+    {"name": "Speaker.set_volume", "sig": "Speaker.set_volume(pct)", "ret": "nothing", "bad": "no-op on non-number", "fail": "—", "notes": "0..100, rounded and clamped. The user's volume is restored when the game ends.", "src": ["bindings/bind_speaker.c:94-101"]},
+    {"name": "Speaker.get_volume", "sig": "Speaker.get_volume()", "ret": "integer", "bad": "—", "fail": "—", "notes": "The volume set by the game this session, else the user's saved volume.", "src": ["bindings/bind_speaker.c"]},
+    {"name": "Speaker.stats", "sig": "Speaker.stats()", "ret": "table", "bad": "—", "fail": "—", "notes": "`{played_total, finish_dropped, error_count, cooldown_reject, no_hookup, speaker_abandoned_current, speaker_abandoned_peak}`. `finish_dropped`: `on_sound_end` events lost; `no_hookup`: plays that will never report `on_sound_end` because too many plays were in flight.", "src": ["bindings/bind_speaker.c:138"]}
+   ],
+   "constants": [
+    {"name": "Speaker.REASON_COMPLETED", "value": "0", "meaning": "Played to the end"},
+    {"name": "Speaker.REASON_STOPPED", "value": "1", "meaning": "`Speaker.stop` / `Speaker.stop_all`"},
+    {"name": "Speaker.REASON_PREEMPTED", "value": "2", "meaning": "Replaced by a newer `Speaker.play`"},
+    {"name": "Speaker.REASON_ERROR", "value": "3", "meaning": "Decode or I/O error"}
+   ],
+   "after": ["A sound declared `\"loop\": true` restarts on completion and never fires `REASON_COMPLETED`; stop it with `Speaker.stop`.", "```lua\nfunction on_sound_end(alias, reason)\n  if alias == \"intro\" and reason == Speaker.REASON_COMPLETED then\n    start_round()\n  end\nend\n```"]
+  },
+  "Servo": {
+   "intro": "Moves the robot's joints. Aliases come from `servos` and `poses` in `manifest.json`. Commands are queued and sent after `on_tick`; two moves of the same servo in one frame are merged. Results are local predictions, not hardware acknowledgements.",
+   "calls": [
+    {"name": "Servo.pose", "sig": "Servo.pose(alias)", "ret": "boolean", "bad": "`false`", "fail": "`false` for an unknown alias or a full queue", "notes": "Plays the gesture mapped to a pose alias and marks all four servos busy for about 1.5 s.", "src": ["bindings/bind_servo.c"]},
+    {"name": "Servo.move", "sig": "Servo.move(alias, angle, duration_ms[, easing])", "ret": "boolean", "bad": "`false`", "fail": "`false`", "notes": "Moves one servo. `angle` in degrees, `duration_ms` 0..65535 (both saturated). `easing`: `\"linear\"` (default), `\"in_out\"`, `\"bounce\"`; anything else returns `false`.", "src": ["bindings/bind_servo.c"]},
+    {"name": "Servo.stop", "sig": "Servo.stop([alias])", "ret": "boolean", "bad": "`false`", "fail": "`false`", "notes": "Stops one servo, or all four without an argument (works even without a `servos` block; `true` only if every stop was queued).", "src": ["bindings/bind_servo.c"]},
+    {"name": "Servo.is_busy", "sig": "Servo.is_busy(alias)", "ret": "boolean", "bad": "`false`", "fail": "—", "notes": "Predicted from the requested duration, not a hardware signal: fine for \"do not queue while moving\", not for exact choreography.", "src": ["bindings/bind_servo.c"]},
+    {"name": "Servo.list", "sig": "Servo.list()", "ret": "table", "bad": "—", "fail": "—", "notes": "`{servos = {alias = \"head\"|\"base\"|\"left\"|\"right\"}, poses = {alias = gesture}}`.", "src": ["bindings/bind_servo.c"]},
+    {"name": "Servo.stats", "sig": "Servo.stats()", "ret": "table", "bad": "—", "fail": "—", "notes": "`{pushed_total, coalesced_total, dropped_total, sent_total, send_fail_total, back_reject_throttle, back_reject_validation, back_reject_priority, back_reject_queue_full, last_reject_ms, drain_max_us}`; `back_reject_*` count commands the robot refused, by cause.", "src": ["bindings/bind_servo.c"]}
+   ]
+  },
+  "Led": {
+   "intro": "The robot's RGB light. Commands are queued and sent after `on_tick`; the light returns to its previous state when the game ends. Every call returns `false` on bad arguments and never raises.",
+   "calls": [
+    {"name": "Led.set", "sig": "Led.set(r, g, b)", "ret": "boolean", "bad": "`false`", "fail": "`false`", "notes": "Each channel 0..255, rounded and clamped.", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.off", "sig": "Led.off()", "ret": "boolean", "bad": "—", "fail": "`false`", "notes": "", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.preset", "sig": "Led.preset(name)", "ret": "boolean", "bad": "`false`", "fail": "`false` for an unknown name", "notes": "One of `user_talk`, `conv_processing`, `robot_talking`, `warm_white`, `light_blue`, `dark_blue`.", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.blink", "sig": "Led.blink(r, g, b, period_ms)", "ret": "boolean", "bad": "`false`", "fail": "`false` when `period_ms` is outside {{led_blink_min_ms}}..{{led_blink_max_ms}}", "notes": "Rejected, not clamped: at most 3 flashes per second (photosensitivity limit).", "src": ["bindings/bind_led.c", "subsystems/led/led_internal.h"]},
+    {"name": "Led.pulse", "sig": "Led.pulse(r, g, b, duration_ms)", "ret": "boolean", "bad": "`false`", "fail": "`false` when `duration_ms` is outside {{led_pulse_min_ms}}..{{led_pulse_max_ms}}", "notes": "Lights for `duration_ms`, then turns off.", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.set_brightness", "sig": "Led.set_brightness(pct)", "ret": "boolean", "bad": "`false`", "fail": "`false` when `pct` is outside 0..100 (not clamped)", "notes": "", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.get_brightness", "sig": "Led.get_brightness()", "ret": "integer", "bad": "—", "fail": "—", "notes": "Last brightness queued successfully (100 until set); not read back from the hardware.", "src": ["bindings/bind_led.c"]},
+    {"name": "Led.is_available", "sig": "Led.is_available()", "ret": "boolean", "bad": "—", "fail": "—", "notes": "`true` while the game is running; `false` during the top level and `game_start`.", "src": ["core/engine_core.c:1113"]},
+    {"name": "Led.stats", "sig": "Led.stats()", "ret": "table", "bad": "—", "fail": "—", "notes": "`{pushed_total, coalesced_total, dropped_total, sent_total, send_fail_total, brightness_pct}`.", "src": ["bindings/bind_led.c"]}
+   ]
+  },
+  "Voice": {
+   "intro": "English keyword spotting: the game sends a short list of command words, the robot listens and reports which one it heard. Not free speech recognition. The pack must list `\"voice\"` in `peripherals`; otherwise no voice session exists. When it is listed, voice is a hard requirement: if the robot cannot keep the voice connection, it ends the game.\n\n**Start voice from `on_tick`, never from the top level or `game_start`.** The robot sets up the voice session only after `game_start` has returned and drops every voice command queued before that, so keywords sent from `game_start` are lost and nothing is ever heard. Send them in the first `on_tick` (or later, on a scene change).",
+   "calls": [
+    {"name": "Voice.set_keywords", "sig": "Voice.set_keywords(list[, sensitivity])", "ret": "`true`", "bad": "raise if `list` is not a table or `sensitivity` is not a number", "fail": "nil, reason: `keywords_not_array` (empty table, holes or non-integer keys), `too_many_keywords` (over {{voice_keywords_max}}), `too_deep`, `too_many_keys`, `encode_failed` (a function, userdata or thread inside), `payload_too_big` (the whole encoded body over {{voice_body_max_bytes}} bytes), `send_failed`", "notes": "Sends the vocabulary **and starts listening**; opening a session (not in talk-flow) stops the sound that is playing, to keep the speaker out of the microphone. `list`: array of up to {{voice_keywords_max}} strings; element types are not checked, so pass strings only. `sensitivity` is truncated to an integer and passed to the voice server unchecked. `true` only means the request was queued; a refusal arrives as an `error` event. While a session is connecting or listening, a second call is refused with `error`/`busy` and the old list stays: to change words call `Voice.stop()`, then `set_keywords` (the robot reconnects, which takes up to a few seconds).", "src": ["bindings/bind_voice.c:149-275", "back_esp32/main/src/application/game_voice/game_voice.cpp:537-604"]},
+    {"name": "Voice.start", "sig": "Voice.start()", "ret": "`true`", "bad": "—", "fail": "nil, `\"send_failed\"`", "notes": "Not needed: `set_keywords` already starts listening. While listening it does nothing; when idle it produces an `error`/`no_keywords` event. It cannot resume after `Voice.stop()`; call `set_keywords` again. In talk-flow it always does nothing.", "src": ["back_esp32/main/src/application/game_voice/game_voice.cpp:571-591"]},
+    {"name": "Voice.stop", "sig": "Voice.stop()", "ret": "`true`", "bad": "—", "fail": "—", "notes": "Stops listening and closes the session. Idempotent.", "src": ["bindings/bind_voice.c"]},
+    {"name": "Voice.is_available", "sig": "Voice.is_available()", "ret": "boolean", "bad": "—", "fail": "—", "notes": "`true` while the game is running (`false` during the top level and `game_start`). It does not probe the voice service; failures arrive as events.", "src": ["core/engine_core.c:1113"]}
+   ],
+   "skill_after": [1, 2, 3, 4],
+   "after": [
+    "### Voice events",
+    "Each voice frame arrives as `on_voice_event(e)`, decoded from JSON into a table (arrays 1-based, `null` becomes absent). A frame that is not valid JSON or exceeds {{voice_event_max_depth}} levels or {{voice_event_max_nodes}} nodes arrives as the raw string, so check `type(e)`.",
+    "| Frame | Meaning |\n| --- | --- |\n| `e.type == \"VOICE_COMMAND\"`, `e.data.keyword` | A keyword from the list was heard. *Shape set by the voice server, not yet confirmed against it ([Q-VOICE-SHAPE](@skill/open-questions.md#q-voice-shape)).* |\n| `e.type == \"VOICE_COMMAND\"`, `e.data.status == \"unavailable\"` | Keyword spotting is down on the server: hide voice hints, keep playing on buttons. |\n| `e.type == \"error\"`, `e.code`, `e.message` | Generated by the robot. `e.code` is one of the codes below. |",
+    "| `e.code` | Cause | Game |\n| --- | --- | --- |\n| `busy` | `set_keywords` while a session is active, or the microphone is in use | continues; the old list stays |\n| `no_keywords` | `Voice.start()` with no list sent | continues |\n| `no_session_key` | the robot's session key is renewing | continues; retry later with `set_keywords` |\n| `invalid_payload` | keyword body too large for the robot | continues |\n| `send_failed` | the keyword list could not be sent | continues |\n| `connect_failed`, `connect_timeout`, `ws_disconnected`, `ws_error` | the voice connection failed | **ends** |",
+    "```lua\nlocal voice_sent = false\n\nfunction on_tick(dt_ms)\n  if not voice_sent then            -- never in game_start: it would be dropped\n    voice_sent = true\n    Voice.set_keywords({ \"jump\", \"fire\", \"stop\" })\n  end\nend\n\nfunction on_voice_event(e)\n  if type(e) ~= \"table\" then return end\n  if e.type == \"VOICE_COMMAND\" and type(e.data) == \"table\" then\n    if e.data.keyword then handle_command(e.data.keyword)\n    elseif e.data.status == \"unavailable\" then hide_voice_hints() end\n  elseif e.type == \"error\" and e.code ~= \"busy\" then\n    hide_voice_hints()\n  end\nend\n```"
+   ]
+  },
+  "Ranking": {
+   "intro": "Leaderboard of the robot game platform. Lua cannot write files; this is the only way to keep a score beyond the session.",
+   "calls": [
+    {"name": "Ranking.report", "sig": "Ranking.report{score = n}", "ret": "boolean", "bad": "`false` when the argument is not a table or `score` is not a number", "fail": "`false` when sending failed", "notes": "Submits a score; the engine adds the session duration itself. Callable several times per session (e.g. per level). `true` only means the report left the head board: the robot drops it when the game was not started from the menu, and in talk-flow it goes to the conversation instead of the leaderboard, so no result follows.", "src": ["bindings/bind_ranking.c", "back_esp32/main/src/application/application.cpp:339-376"]},
+    {"name": "Ranking.get_result", "sig": "Ranking.get_result()", "ret": "table or nil", "bad": "—", "fail": "—", "notes": "The leaderboard fetched after the last successful report, or `nil` if none arrived yet. **Consume-once**: the next call returns `nil` until a new result arrives. Poll it from `on_tick`.", "src": ["bindings/bind_ranking.c"]}
+   ],
+   "after": ["Result table: `{top = {{rank, profile_id, display_name, score, played_at}, ...}, my_rank = {...} or nil, my_best_score = number or nil}`. A result larger than 256 JSON nodes is dropped (`nil`)."]
+  }
+ },
+
+ "sandbox": [
+  "Available: the Lua 5.5 base library without `load`, `loadfile` and `dofile`; `string`, `table`, `math`, `utf8`. Not available: `io`, `os`, `debug`, `package`, `coroutine`. Only text chunks load; precompiled bytecode is refused.",
+  "`require(\"libs/<name>\")` loads `libs/<name>.lua` from the pack once per session (later calls return the cached value). Any other module name raises.",
+  "The Lua heap is {{lua_heap_kb}} KiB, garbage included; an allocation past it raises a memory error (in `on_tick` the game ends with `err=OOM`). Image, animation, font and line pixels live in PSRAM outside this heap.",
+  "Nested C calls are limited to {{lua_maxccalls}} levels (desktop Lua: 200). `pcall`, metamethods, `table.sort`/`string.gsub` callbacks and `require` each add a level; deeper nesting raises `C stack overflow`. The parser uses the same counter: a single expression with more than about 20 chained `..` or deeply nested table constructors fails to load on the robot."
+ ],
+
+ "not_exist": [
+  {"name": "Engine.now_ms(), os.time(), os.clock()", "instead": "`Timer.millis()`"},
+  {"name": "Engine.version()", "instead": "nothing; do not print a version from Lua"},
+  {"name": "love.*, update(), draw(), on_draw()", "instead": "`on_tick` plus retained `Sprite`/`Text`"},
+  {"name": "State.save(), State.load(), any save API", "instead": "none: nothing persists between sessions; keep scores with `Ranking.report`"},
+  {"name": "Voice.mode()", "instead": "`params.is_a2a` in `game_start(params)`"},
+  {"name": "Voice.listen(), Voice.transcribe(), speech-to-text", "instead": "`Voice.set_keywords` plus `on_voice_event`"},
+  {"name": "Speaker.say(), text-to-speech", "instead": "none: every spoken line is a recorded file"},
+  {"name": "Speaker.play_file(\"a.wav\"), Speaker.play(\"assets/a.wav\")", "instead": "`Speaker.play(\"<alias>\")` with the alias in the manifest"},
+  {"name": "Sprite.rotate(), spr:rotate(a), spr:scale(k)", "instead": "`spr:set_rotation(deg10)`, `spr:set_scale(n)` (both sides at most {{transform_max_px}} px)"},
+  {"name": "spr:set_alpha(a), spr:set_tint(c), blend modes, filters, gradients", "instead": "`spr:set_opacity(0..255)`; bake tint, blend and gradients into the image"},
+  {"name": "Sprite.text(), drawing text into a sprite", "instead": "`Text.new`, or bake the text into the image"},
+  {"name": "Shape.rect(), Shape.circle(), Shape.fill()", "instead": "`Sprite.solid` for rectangles; circles as images"},
+  {"name": "t:set_width(), t:wrap(), t:set_z(), text measuring", "instead": "break lines in the data; stack with other objects' `:set_z`"},
+  {"name": "Input.on(), callback registration", "instead": "the global `on_input(action, phase, hold_ms)`"},
+  {"name": "Timer.after(), Timer.every(), setTimeout", "instead": "compare `Timer.millis()` with a deadline in `on_tick`"},
+  {"name": "coroutine.*", "instead": "not loaded; use a state variable and `on_tick`"},
+  {"name": "require(\"json\"), require(\"socket\"), any non-libs/ module", "instead": "only `require(\"libs/<name>\")` from the pack"},
+  {"name": "io.*, os.*, load, dofile, package.*, debug.*", "instead": "not loaded (sandbox)"}
+ ],
+
+ "limits": [
+  {"label": "Screen", "value": "{{screen_w}} × {{screen_h}} px", "keys": "facts.screen", "past": "off-screen pixels are clipped"},
+  {"label": "Frame", "value": "`dt_ms` {{dt_ms}}; real period {{tick_period_ms}} ms (≈{{tick_hz_max}} Hz)", "keys": "target_fps, derived.tick_period_ms", "past": "use `Timer.millis()` for time"},
+  {"label": "Hook watchdog", "value": "{{hook_watchdog_ms}} ms per hook call", "keys": "hook_watchdog_ms", "past": "the hook raises; see each hook's error rule"},
+  {"label": "Stall detector", "value": "{{stall_detect_sec}} s without frame progress", "keys": "stall_detect_sec", "past": "game ends"},
+  {"label": "Lua heap", "value": "{{lua_heap_kb}} KiB incl. garbage", "keys": "lua_heap_kb", "past": "memory error (`err=OOM`)"},
+  {"label": "Nested C calls", "value": "{{lua_maxccalls}}", "keys": "lua_maxccalls", "past": "`C stack overflow` (also at load time)"},
+  {"label": "Integers", "value": "{{lua_int_bits}}-bit", "keys": "lua_int_bits", "past": "overflow wraps"},
+  {"label": "Live `Text`", "value": "{{text_slots}}", "keys": "text_slots", "past": "`Text.new` → nil, `\"pool_full\"`"},
+  {"label": "Live `Shape` lines", "value": "{{line_slots}}, width ≤ {{line_width_max}} px, {{line_pool_kib}} KiB raster", "keys": "line_slots, line_width_max, line_pool_max_bytes", "past": "nil, `pool_full` / `no_mem`; width clamped"},
+  {"label": "Sprites", "value": "no count cap; PSRAM `w*h*3` (PNG with alpha) or `w*h*2` (others)", "keys": "facts.sprite_cap", "past": "factory → nil, msg"},
+  {"label": "Image / PNG file", "value": "≤ {{img_max_w}} × {{img_max_h}} / ≤ {{png_max_file_mib}} MiB", "keys": "img_max_w, img_max_h, png_max_file_bytes", "past": "load fails"},
+  {"label": "Scale / rotate", "value": "both sides ≤ {{transform_max_px}} px", "keys": "transform_max_px", "past": "call returns `false`"},
+  {"label": "Anim", "value": "1 playing; file ≤ {{anim_max_file_mib}} MiB; frame delay ≥ {{anim_min_frame_ms}} ms", "keys": "facts.anim_concurrent, anim_max_file_bytes, anim_min_frame_ms", "past": "`play` stops the other Anim"},
+  {"label": "Fonts", "value": "file ≤ {{font_max_file_kib}} KiB; {{font_px_min}}–{{font_px_max}} px (default {{font_px_default}}); {{font_slots}} faces", "keys": "font_*", "past": "`set_font` → nil, msg"},
+  {"label": "Asset path", "value": "≤ {{sandbox_rel_path_budget}} − len(game_id) bytes", "keys": "sandbox_path_max", "past": "raise `unsafe ... path`"},
+  {"label": "Manifest", "value": "≤ {{manifest_max_kib}} KiB", "keys": "manifest_max_bytes", "past": "pack rejected"},
+  {"label": "Input actions", "value": "≤ {{input_actions_max}}, name ≤ {{input_action_name_chars}} chars", "keys": "input_actions_max, input_action_name_max", "past": "pack rejected"},
+  {"label": "Input queue", "value": "{{input_ring_slots}} events", "keys": "input_ring_slots", "past": "`on_input_lost(count)`"},
+  {"label": "Button repeat", "value": "first after {{button_repeat_delay_ms}} ms, then every {{button_repeat_rate_ms}} ms", "keys": "button_repeat_*", "past": "—"},
+  {"label": "HOME hold", "value": "≥ {{home_force_exit_ms}} ms", "keys": "home_force_exit_ms", "past": "game force-exits"},
+  {"label": "Sound aliases", "value": "≤ {{sound_aliases_max}}; alias ≤ {{sound_alias_chars}}, path ≤ {{sound_path_chars}}, URL ≤ {{sound_url_chars}} chars", "keys": "sound_*", "past": "**whole pack rejected** (also for a missing sound file)"},
+  {"label": "Sound cooldown", "value": "{{sound_cooldown_ms}} ms between plays", "keys": "sound_cooldown_ms", "past": "`Speaker.play` → `false`"},
+  {"label": "Sound channels / finish queue", "value": "1 / {{sound_finish_ring}} events", "keys": "facts.sound_channels, sound_finish_ring", "past": "preempt / `on_sound_lost(count)`"},
+  {"label": "Servo / pose aliases", "value": "≤ {{servo_aliases_max}} / ≤ {{pose_aliases_max}}", "keys": "servo_aliases_max, pose_aliases_max", "past": "pack rejected"},
+  {"label": "LED blink / pulse", "value": "{{led_blink_min_ms}}–{{led_blink_max_ms}} ms / {{led_pulse_min_ms}}–{{led_pulse_max_ms}} ms", "keys": "led_*", "past": "`false` (rejected, not clamped)"},
+  {"label": "Voice keywords / body", "value": "≤ {{voice_keywords_max}} / ≤ {{voice_body_max_bytes}} bytes", "keys": "voice_keywords_max, voice_start_json_max_bytes", "past": "nil, reason"},
+  {"label": "Voice event decode", "value": "depth ≤ {{voice_event_max_depth}}, ≤ {{voice_event_max_nodes}} nodes", "keys": "voice_event_*", "past": "hook receives the raw string"},
+  {"label": "Start params", "value": "≤ {{start_params_max_bytes}} bytes, ≤ {{start_params_max_nodes}} nodes", "keys": "start_params_*", "past": "`game_start` gets an empty table"}
+ ],
+
+ "facts": [
+  "**No persistence.** Lua cannot write files and there is no save API; scores leave the robot only through `Ranking.report`.",
+  "**No TTS.** Every spoken line is a recorded audio file.",
+  "**No runtime blend, filter or gradient.** Bake them into the image.",
+  "**No text wrap and no width query.** Break lines in the data.",
+  "**Draw order is creation order.** `set_z` is a child index shared by Sprites, Text, Shapes and Anim canvases.",
+  "**Asynchronous peripherals.** `Servo`, `Led`, `Voice` and `Ranking` return a local result, not a hardware or server acknowledgement. Only `Speaker` reports completion (`on_sound_end`).",
+  "**Checksums.** An installed pack carries `s.json` (CRCs of its scripts, JSON and media files), issued when the pack is published through the Pika platform. The robot refuses files that do not match. Never create or edit `s.json`; Pika Studio neither creates nor checks it."
+ ],
+
+ "known_issues_intro": "Firmware behaviour that is surprising or wrong today. Game code must work around it; each entry says how. IDs are stable: cite them in code comments and bug reports.",
+ "known_issues": [
+  {"id": "KI-FLIP-FRAME", "title": "`set_frame` drops the flip but the engine still thinks it is flipped", "behaviour": "`spr:set_frame` loads the frame unflipped but keeps the recorded flip state, and `spr:set_flip` only acts when the requested state differs from the recorded one. After `set_frame`, calling `set_flip` with the same values does nothing, so the frame stays unflipped.", "workaround": "Do not flip sprites that use `set_frame`: ship pre-flipped frames in the strip. If you must: call `set_flip(false, false)` **before** each `set_frame`, then `set_flip` with the wanted state after it.", "status": "confirmed in code", "src": ["render/lvgl_renderer.c:952-979", "render/lvgl_renderer.c:1069"]},
+  {"id": "KI-DT-NOMINAL", "title": "`dt_ms` is {{dt_ms}} but frames are {{tick_period_ms}} ms apart", "behaviour": "The frame period rounds to {{tick_period_ms}} ms (RTOS tick {{freertos_tick_ms}} ms) while `on_tick` always receives {{dt_ms}}. Summing `dt_ms` runs about 10% fast on time and drifts whenever frames are late.", "workaround": "Drive every timer and movement from `Timer.millis()` differences.", "status": "confirmed in code; robot logs never show tick_hz above {{tick_hz_max}}", "src": ["core/engine_core.c:1010", "core/engine_core.c:1330", "head_esp32/sdkconfig:CONFIG_FREERTOS_HZ"]},
+  {"id": "KI-OOM-EDGE", "title": "Near the heap limit a game may be tagged OOM", "behaviour": "The allocator records an OOM error before Lua's emergency garbage collection retries the allocation. A game whose heap, garbage included, touches {{lua_heap_kb}} KiB pays a full-GC hitch and can end with `err=OOM` even though the retry could have succeeded.", "workaround": "Keep peak heap well below the limit: allocate once, reuse tables, avoid building strings every frame. Watch `arena` in `game.running` and `arena_pk` in `game.stop`.", "status": "from code reading, not reproduced on a robot", "src": ["core/lua_vm.c:173-181"]},
+  {"id": "KI-MILLIS-WRAP", "title": "`Timer.millis()` turns negative after about 24.8 days", "behaviour": "Integers are {{lua_int_bits}}-bit; uptime in milliseconds overflows after 2^31 ms. A firmware comment claims 49.7 days; that figure is for unsigned 32-bit.", "workaround": "Compare differences (`Timer.millis() - t0`), which stay correct across the wrap.", "status": "confirmed in code", "src": ["bindings/bind_engine.c:146", "head_esp32/components/lua-5.5.0/CMakeLists.txt:38"]},
+  {"id": "KI-FIRST-RUNNING", "title": "The first `game.running` line covers one frame", "behaviour": "The telemetry window starts at the first tick, so the first `game.running` line is printed at `t=0` with a meaningless `tick_hz` (often single digits).", "workaround": "Ignore the first `game.running` line of a session.", "status": "confirmed in code and robot logs", "src": ["core/engine_core.c:785"]}
+ ],
+
+ "pc_vs_robot_intro": "Where the PC tools (`tools/smoke.py`, the browser kit, Pika Studio) behave differently from the robot. Passing on the PC does not prove these points; each row says what to do.",
+ "pc_vs_robot": [
+  {"id": "PC-INT", "topic": "Integer width", "robot": "{{lua_int_bits}}-bit, overflow wraps", "pc": "smoke.py (lupa) and Pika Studio use 64-bit integers", "do": "Keep integers below 2^31; compare `Timer.millis()` differences."},
+  {"id": "PC-CCALLS", "topic": "Nested C calls", "robot": "{{lua_maxccalls}} levels, also while parsing", "pc": "200 levels", "do": "No deep `pcall`/metamethod/`require` chains; no expression with ~20 chained `..`; smoke.py warns on long `..` chains."},
+  {"id": "PC-SPEED", "topic": "Speed and timing", "robot": "{{tick_period_ms}} ms frames; SD reads and decodes block the frame", "pc": "a desktop CPU; nothing measures robot cost", "do": "Only robot telemetry proves performance ([Telemetry](@docs/reference/telemetry.md))."},
+  {"id": "PC-VOICE", "topic": "Voice", "robot": "keywords sent from `game_start` are dropped; real server", "pc": "smoke.py flags voice calls in `game_start`; Studio uses its own voice server settings", "do": "Send keywords from `on_tick`; test voice on a robot."},
+  {"id": "PC-PNG-COST", "topic": "Opaque PNG memory", "robot": "`w*h*2` for a PNG without alpha", "pc": "the browser kit counts every `Sprite.image` at `w*h*3`", "do": "Trust smoke.py's figure (it reads the PNG header); the kit over-estimates."},
+  {"id": "PC-STRIP", "topic": "Frame strips", "robot": "`set_frame` works on any sprite whose strip matches its own format", "pc": "the browser kit supports `set_frame` only on `Sprite.new` `.rgb565` sprites", "do": "Use `.rgb565` strips; the kit rule is a simplification, not an engine limit."},
+  {"id": "PC-ROOT-LEN", "topic": "Games folder path length", "robot": "packs live under `{{games_root}}`, so full paths stay short", "pc": "Pika Studio builds `<games folder>/<game_id>/<path>` into the engine's {{sound_abs_path_max}}-byte sound path buffer; a long games folder fails the pack at load (`sound '<alias>': bad absolute path`, `game.error code=PACK_MANIFEST`) although it runs on the robot", "do": "Keep the games folder path at most {{pc_games_root_chars}} characters (e.g. `E:/pika-games`); `tools/smoke.py` warns `PC-ROOT-LEN` for the folder the pack is in."},
+  {"id": "PC-HOME", "topic": "HOME, LED, servos", "robot": "real hardware; HOME held ≥ {{home_force_exit_ms}} ms force-exits", "pc": "simulated or absent", "do": "Check them in the release checklist on a robot."},
+  {"id": "PC-SJSON", "topic": "Checksums", "robot": "refuses files that do not match `s.json`", "pc": "nothing checks `s.json`", "do": "Publish through the Pika platform; never edit `s.json`."}
+ ]
+}

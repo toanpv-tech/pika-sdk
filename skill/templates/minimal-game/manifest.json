@@ -1,18 +1,14 @@
 {
+  "name": {"vi": "Game tối giản", "en": "Minimal Game"},
   "version": "0.1.0",
-  "name": "Minimal Game",
+  "author": "Pika SDK",
   "main": "scripts/main.lua",
+  "peripherals": ["display", "button"],
   "input": {
     "actions": {
       "enter": ["button:enter"],
       "left":  ["button:left"],
       "right": ["button:right"]
-    }
-  },
-  "assets": {
-    "sprites": [],
-    "audio": {
-      "sounds": {}
     }
   }
 }

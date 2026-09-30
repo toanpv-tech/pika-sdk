@@ -1,0 +1,246 @@
+# Telemetry: reading the robot log
+
+While a game runs, the engine writes a few summary lines to the robot's serial log. They are
+the only proof of how a game performs on real hardware: whether frames keep time, whether
+memory drifts, and why the game ended. This page defines each line (a contract), then gives
+diagnosis rules (heuristics, labelled as such).
+
+Connect a serial monitor to the robot's head board at 115200 baud. Engine lines carry a
+level, milliseconds since boot and a tag:
+
+```text
+I (812345) 🎮 game.engine: game.start game=bubble trigger=menu ready=1210 ...
+```
+
+`print(...)` from Lua appears as `🎮 game.bind: [lua] ...`. All memory values are bytes;
+every `*_us` value is microseconds.
+
+## How a frame is measured
+
+Read every number below with these facts in mind:
+
+1. **A frame lasts {{tick_period_ms}} ms**, so a healthy game shows `tick_hz` ≈
+   {{tick_hz_max}} (not {{target_fps}}; see [KI-DT-NOMINAL](known-issues.md#ki-dt-nominal)).
+2. **`tick_us` is the frame's own work**: from the start of the frame to the screen publish,
+   covering your hooks, engine work and any wait for the display lock while the previous
+   screen update is still rendering. Rasterising and sending pixels to the panel happen
+   afterwards on the other CPU core and are **not** in `tick_us`. So a small `tick_us` does
+   not prove a smooth screen, and a large one can be the lock wait, not your Lua.
+3. **`gap_us` is what the player feels**: the interval between the ends of two frames. A frame
+   counts as **slow** when `gap_us` exceeds {{telemetry_slow_frame_ms}} ms.
+4. **Logging costs time.** At 115200 baud one character takes about 87 µs, so a 100-character
+   line blocks for about 9 ms. A `print` inside a hook is paid in that frame's `tick_us`. The
+   engine's own `game.running`/`game.warn` lines are printed after the frame is measured and
+   show up in the next frame's `gap_us`.
+
+## The lines
+
+| Line | When | Answers |
+| --- | --- | --- |
+| `game.start` | once, when the game is playable | How long did it take to open? Memory baselines. |
+| `game.running` | every {{telemetry_running_s}} s or {{telemetry_running_frames}} frames, whichever comes first; the first line comes at `t=0` and covers one frame ([KI-FIRST-RUNNING](known-issues.md#ki-first-running)) | Is it smooth now? Is memory drifting? |
+| `game.warn` | at most once per {{telemetry_warn_s}} s window, only if something happened in it | Early warning: slow frames, low memory, failed calls |
+| `game.error` | on a failure | What failed, in which phase, with which Lua error? |
+| `game.stalled` | no frame completed for {{stall_detect_sec}} s while running, or loading took over {{telemetry_load_stall_s}} s | Which native call hung? |
+| `game.stop` | once, at teardown of a started game | Session summary and why it ended |
+
+### game.start
+
+```text
+game.start game=<id> trigger=<menu|a2a> ready=<ms> queue=<ms> init=<ms> load=<ms> anim=<ms> render=<ms> arena=<B> psram=<B> heap=<B> fps_target=<n>
+```
+
+| Field | Meaning |
+| --- | --- |
+| `trigger` | `menu`: opened from the game menu. `a2a`: started inside a talk-flow session. |
+| `ready` | Wait from the launch request to the first frame; `queue`, `init`, `load`, `anim`, `render` split it in order, and the largest names the phase to optimise. |
+| `queue`, `init` | Engine start-up before the pack is read; not under the game's control. |
+| `load` | Folder CRC check, manifest, entry script and `game_start`. Grows with the total pack size and with work done in `game_start`. |
+| `anim`, `render` | Removing the loading animation and entering the game screen. |
+| `arena` | Lua heap in use after `game_start`: the baseline for `arena_pk`. |
+| `psram` | Largest free PSRAM block after loading. Compare between sessions. |
+| `heap` | Largest free internal RAM block: the baseline for `heap_min`. |
+
+### game.running
+
+```text
+game.running t=<s> tick_hz=<n> tick_us=<us> gap_us=<us> p95=<us> slow_n=<n> heap=<B> arena=<B> hwm_engine=<B> ccalls=<n>
+```
+
+| Field | Scope | Meaning |
+| --- | --- | --- |
+| `t` | | Seconds since the game started |
+| `tick_hz` | window | Frames per second in this window (healthy ≈ {{tick_hz_max}}) |
+| `tick_us` | window max | Longest frame work (fact 2 above) |
+| `gap_us` | window max | Longest interval between two frames (fact 3) |
+| `p95` | session | 95th percentile of `tick_us`, as the upper edge of its bucket: 2000, 4000, 8000, 16000, 24000, 33000, 50000 or above <!-- number-ok --> |
+| `slow_n` | session | Slow frames so far (raw count) |
+| `heap` | now | Largest free internal RAM block |
+| `arena` | now | Lua heap in use, garbage included |
+| `hwm_engine` | session | Lowest free stack of the engine task |
+| `ccalls` | session | Deepest nesting of Lua→C→Lua calls seen (a sampled lower bound; the limit is {{lua_maxccalls}}). `pcall`, metamethods, `sort`/`gsub` callbacks and `require` count; plain Lua recursion does not. |
+
+`tick_us` and `gap_us` are maxima: one spike looks the same as many. Use `slow_n` for
+frequency and `p95` for the typical cost.
+
+### game.warn
+
+One line per window, only when something happened; only non-zero keys appear. On the serial
+log the body has no braces:
+
+```text
+game.warn "overrun":37,"Speaker.play":2,"heap":11840
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `overrun` | count in window | Slow frames (`gap_us` over {{telemetry_slow_frame_ms}} ms) |
+| `animerr` | count in window | `Anim` decode errors; the animation was stopped |
+| `heap` | lowest in window | Largest free internal RAM block fell below {{telemetry_heap_low_kib}} KiB |
+| `<binding>` | count in window | Failed calls of that binding, by name (first four names) |
+| `api_other` | count in window | Failed calls beyond the first four names |
+
+Bindings that report failures here: `Sprite.image`, `Sprite.new`, `Sprite.solid`, `Text.new`,
+`Shape.line`, `Shape.set_points`, `Shape.set_style`, `Speaker.play` (refused, including the
+cooldown), `Speaker.play/alias` (unknown alias), `Speaker.set_url`, `Speaker.set_url/arg`.
+Other calls (`Anim.new`, `Text:set_font`, `Servo`, `Led`, `Voice`, `Ranking`) do not; check
+their return values in Lua.
+
+### game.error
+
+```text
+game.error code=<CODE> phase=<phase> game=<id> msg="<error>"
+```
+
+| `phase` | What failed | Typical `code` |
+| --- | --- | --- |
+| `launch` | the robot refused to start the game (another launch in progress, no memory); has `why=` instead of `msg=` | `LAUNCH_REJECTED` |
+| `load` | folder, manifest, CRC, entry script or `game_start` ([manifest](manifest.md#when-a-pack-does-not-open)) | `PACK_NOT_FOUND`, `PACK_MANIFEST`, `VALIDATOR`, `LUA_LOAD`, `LUA_VM_CREATE`, `LUA_RUNTIME` |
+| `render` | entering the game screen | `RENDER_INIT` |
+| `on_tick`, `on_input`, `on_sound_end` | an error raised in that hook (`on_input_lost` counts as `on_input`, `on_sound_lost` as `on_sound_end`) | `LUA_RUNTIME`, `LUA_WATCHDOG`, `OOM` |
+| `stall`, `load_stall` | the engine stopped making progress (see `game.stalled`) | `LUA_WATCHDOG` |
+
+| `code` | Meaning |
+| --- | --- |
+| `LUA_RUNTIME` | A Lua error: bad argument, nil index, `error()`, `C stack overflow` |
+| `LUA_WATCHDOG` | A hook call ran over {{hook_watchdog_ms}} ms, or the engine stalled |
+| `OOM` | The Lua heap ({{lua_heap_kb}} KiB) or PSRAM ran out during a Lua allocation ([KI-OOM-EDGE](known-issues.md#ki-oom-edge)) |
+| `LUA_LOAD` | Entry script missing, not matching `s.json`, a syntax error, or bytecode |
+| `PACK_MANIFEST` | A manifest rule was broken; the line before names it |
+| `PACK_NOT_FOUND` | No, unreadable or oversized `manifest.json`, or an unsafe folder name |
+| `VALIDATOR` | A pack file does not match `s.json` |
+
+`msg` is shortened. The full Lua error with its traceback is on the line just before:
+
+```text
+E (90211) 🎮 game.lua: pcall fail fn=on_tick msg="scripts/main.lua:88: attempt to index a nil value (local 'hero') ..."
+```
+
+### game.stalled
+
+```text
+game.stalled phase=run game=<id> last_tick_ms=<ms> binding=<name> binding_age_ms=<ms> heap_int_free=<B> heap_int_largest=<B>
+game.stalled phase=load game=<id> pending_ms=<ms> binding=<name> heap_int_free=<B> heap_int_largest=<B>
+```
+
+The Lua watchdog did not fire, so the engine is stuck inside native code, not in a Lua loop.
+`binding` is the last robot-peripheral call entered (`Speaker.*`, `Servo.*`, `Voice.*`,
+`Ranking.*`, `Engine.report_result`), or `(none)`. The engine then ends the game and prints
+`game.stalled phase=<phase> result=recovered`; without that line the engine is still wedged.
+
+### game.stop
+
+```text
+game.stop game=<id> end=<norm|home|err|stall> [err=<CODE>] dur=<s> frames=<n> tick_hz=<n> draw_pm=<n> p95=<us> slow_pm=<n> arena_pk=<B> heap_min=<B> psram=<B> [drop=<in>/<snd>/<nohook>/<svo>/<led>] api_fail=<n>
+```
+
+| Field | Meaning |
+| --- | --- |
+| `end` | Checked in this order: `stall` (the engine stalled), `err` (any error was recorded, even one the game survived, e.g. in `on_voice_event`), `home` (the robot stopped the game from outside: HOME held, voice lost, a system stop), `norm` (the game ended itself: `Engine.exit`, or a short HOME with `on_home` not keeping it). |
+| `err` | Error code, only when one was recorded |
+| `dur`, `frames` | Session length and frames. `frames` far below `dur` × {{tick_hz_max}} means the game froze for stretches. |
+| `tick_hz` | `frames / dur` |
+| `draw_pm` | Screen refreshes per mille of frames, capped at 1000. The screen refreshes only when something changed, so a mostly static game reads low without being slow. |
+| `p95` | 95th percentile frame work for the session (bucket edge) |
+| `slow_pm` | Slow frames per mille of `frames` |
+| `arena_pk` | Peak Lua heap use, garbage included |
+| `heap_min` | Lowest largest-free internal RAM block (`0` only when no frame ran) |
+| `psram` | Largest free PSRAM block at teardown, before the pack is unloaded |
+| `drop` | Only when non-zero: input events lost / `on_sound_end` events lost / sounds played without `on_sound_end` / servo commands refused / LED commands dropped |
+| `api_fail` | Failed binding calls in the session (same bindings as `game.warn`) |
+
+A game that fails to load or to enter the screen prints `game.error` and no `game.stop`.
+
+```text
+game.stop game=bubble end=norm dur=127 frames=4180 tick_hz=33 draw_pm=968 p95=16000 slow_pm=11 arena_pk=207872 heap_min=62464 psram=2983936 api_fail=0
+```
+
+## Diagnosis (heuristics)
+
+These rules come from reading the lines above; none is a measured guarantee. Use them to
+choose where to look, then confirm with a change and a new run.
+
+### Frames
+
+| Signs | Likely cause | Try |
+| --- | --- | --- |
+| `tick_us` near or above {{tick_period_ms}}000, high `p95` | Heavy frames: your hooks, SD reads (`set_frame`), image decodes, or waiting for a slow screen update | Time your hooks with `Timer.millis()` around suspect blocks (print outside `on_tick`); move loads out of play; change fewer pixels per frame |
+| `tick_us` small, `gap_us` large, high `slow_pm` | Something else took the CPU between frames (audio, voice, a system task) | Not a Lua problem; note what played at that moment |
+| `gap_us` spikes every {{telemetry_running_s}} s or {{telemetry_warn_s}} s | The engine's own log lines | Ignore |
+| `tick_us` spikes in frames where you `print` | Your `print` | Remove per-frame `print` |
+| `slow_pm` high, `p95` low | Many frames slightly over budget | Trim constant per-frame work |
+| `slow_pm` low, a single big `gap_us` | Occasional heavy frames | Look for loads during play: `Sprite.image`, `spr:set_frame`, `Text:set_font`, `Anim.new`, garbage collection after large allocations |
+| `tick_hz` ≈ {{tick_hz_max}} but low `draw_pm` while the screen changes every frame | The panel cannot keep up with the changed area | Change fewer and smaller regions per frame; avoid full-screen redraws and transforms on many sprites |
+
+### Memory
+
+| Signs | Likely cause | Try |
+| --- | --- | --- |
+| `arena` rises between `game.running` lines | Lua keeps references it no longer needs | Clear tables, drop handles, reuse objects |
+| `arena_pk` close to {{lua_heap_bytes}} | Lua heap nearly full; the log also shows `alloc near_budget ... pct={{lua_near_budget_pct}}` | Fewer tables and strings; allocate once |
+| `psram` in `game.start` drops session after session | Memory not returned between games | Report it with both `game.start` lines; not fixable from Lua |
+| `heap` key in `game.warn`, falling `heap` in `game.running` | Internal RAM running out | Robot-level problem; report what played at the time |
+| `err=OOM`, `Sprite.*` in `game.warn`, `(nil, "...ESP_ERR_NO_MEM")` | PSRAM exhausted by images | Fewer or smaller images; destroy what is off screen ([Sprite cost](api.md#sprite)) |
+
+### Errors and stalls
+
+| Signs | Likely cause | Try |
+| --- | --- | --- |
+| `game.error phase=load` | The pack never started | Read the line before it |
+| `phase=on_*`, `code=LUA_RUNTIME` | A Lua error | The `pcall fail` line has file and line |
+| `code=LUA_WATCHDOG`, `end=err` | A hook ran over {{hook_watchdog_ms}} ms | Find the loop that does not end, or split work across frames |
+| `game.stalled`, `end=stall` | Stuck in a native call | Note `binding`; report it with the log |
+| `game.error phase=on_*` with no `game.stop` after it | The robot rebooted before teardown | Report it with the log |
+
+### The log is clean but the game is wrong
+
+`end=norm` only means the engine saw no error; it does not check game logic.
+
+| Signs | Likely cause | Try |
+| --- | --- | --- |
+| `api_fail` above 0 | Calls failed and the script ignored the result | `game.warn` names the binding; check its return value |
+| `api_fail=0`, still wrong | A call outside the reporting list failed, or a logic bug | Check returns of `Anim.new`, `Text:set_font`, `Servo.*`, `Led.*`, `Voice.*` |
+| `drop` second or third value above 0 | `on_sound_end` never came for some sounds | Do not chain game flow only on `on_sound_end`; add a `Timer.millis()` timeout |
+
+## Other useful lines
+
+| Line | Meaning |
+| --- | --- |
+| `game.pack: pack_load ok game=... name="..." entry=... has_voice=1` | Pack accepted; `has_voice` reflects `"voice"` in `peripherals` |
+| `game.pack: pack_load fail reason=...` | Load stopped; `reason` names the step |
+| `game.lua: script_load fail path=... msg="..."` | Syntax error or CRC failure in the entry script |
+| `game.lua: alloc near_budget held=... pct={{lua_near_budget_pct}}` | Lua heap at {{lua_near_budget_pct}} % of {{lua_heap_kb}} KiB |
+| `game.asset: sprite_open fail reason=validate` / `too_small` | Raw file missing or not matching `s.json` / smaller than `w*h*2` |
+| `game.asset: png_decode fail reason=too_large` | PNG larger than {{img_max_w}} × {{img_max_h}} |
+| `game.anim: anim_open fail reason=size_oor` / `canvas_too_large` | Animation file over {{anim_max_file_mib}} MiB / frame over {{img_max_w}} × {{img_max_h}} |
+| `game.render: set_scale refused: sprite WxH exceeds {{transform_max_px}} px transform limit` | Transform on a sprite over the limit (logged once per sprite) |
+| `game.render: font cache full: all {{font_slots}} faces in use` | One (font, size) pair too many |
+| `game.render: line pool budget: ...` | `Shape` lines exceed their {{line_pool_kib}} KiB raster budget |
+| `game.sound: play throttled: alias='x' ...` | `Speaker.play` within the {{sound_cooldown_ms}} ms cooldown |
+| `game.sound: remote sound 'x' has no url yet` | `Speaker.play` before `Speaker.set_url` |
+| `game.sound: inflight saturated; no finish hookup` | Plays issued too fast; this one gets no `on_sound_end` |
+| `game.input: ring overflow delta=...` | Button events lost; `on_input_lost` fires |
+| `game.bind: Text:set on stale handle` | Method called on a destroyed Text |
+
+A missing PNG for `Sprite.image` is logged only at debug level; rely on the `(nil, msg)` it
+returns.

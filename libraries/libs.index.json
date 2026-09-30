@@ -1,16 +1,16 @@
 {
   "schema": "pika-sdk-libs/1",
-  "note": "Bản gốc thư viện Lua. Công cụ tạo game copy module (kèm phụ thuộc) vào game/libs/. Đường require trong game giữ prefix libs/.",
+  "note": "Original copies of the Lua libraries. The game tooling copies a module (with its dependencies) into <game>/libs/. Inside a game the require path keeps the libs/ prefix. Exact functions: skill/libs-catalog.md.",
   "modules": [
-    { "file": "fsm.lua",         "require": "libs/fsm",         "title": "Finite state machine", "summary": "Máy trạng thái hữu hạn cho luồng game." },
-    { "file": "animator.lua",    "require": "libs/animator",    "title": "Animator", "summary": "Tween/easing cho chuyển động Sprite." },
-    { "file": "ui.lua",          "require": "libs/ui",          "title": "UI", "summary": "Selector + xác nhận yes/no 1 dòng, qua Text." },
-    { "file": "settings.lua",    "require": "libs/settings",    "title": "Pre-game settings", "summary": "Màn cài đặt trước khi chơi (Start + tunables), 3 nút, push qua on_start(cfg)." },
-    { "file": "testkit.lua",     "require": "libs/testkit",     "title": "Test kit", "summary": "Harness test tối thiểu chạy phía game." },
-    { "file": "math/easing.lua", "require": "libs/math/easing", "title": "Easing", "summary": "Đường cong easing [0..1] → [0..1]." },
-    { "file": "math/lerp.lua",   "require": "libs/math/lerp",   "title": "Lerp", "summary": "lerp + clamp." },
-    { "file": "math/vec2.lua",   "require": "libs/math/vec2",   "title": "Vec2", "summary": "Vector 2D." },
-    { "file": "util/str.lua",    "require": "libs/util/str",    "title": "String utils", "summary": "Tiện ích chuỗi." },
-    { "file": "util/tbl.lua",    "require": "libs/util/tbl",    "title": "Table utils", "summary": "Tiện ích bảng." }
+    { "file": "fsm.lua",         "require": "libs/fsm",         "title": "Finite state machine", "summary": "new(initial); machine:add(from, event, to), :on(state, enter, exit), :fire(event), :get()." },
+    { "file": "animator.lua",    "require": "libs/animator",    "title": "Animator", "summary": "Numeric tween: tween(target, from, to, duration_ms, ease) writes the eased value to target.value on :step(elapsed_ms); moves nothing itself. Needs libs/math/easing." },
+    { "file": "ui.lua",          "require": "libs/ui",          "title": "UI", "summary": "selector(items, opts) and confirm(question, opts), drawn with one shared Text line." },
+    { "file": "settings.lua",    "require": "libs/settings",    "title": "Pre-game settings", "summary": "new(spec) menu (Start plus choice/range rows) for three buttons; :input, :render, :destroy; labels are images under spec.kit; delivers the choices through spec.on_start(cfg)." },
+    { "file": "testkit.lua",     "require": "libs/testkit",     "title": "Test kit", "summary": "expect, expect_eq, reg_sync, run_sync; reg_async only registers." },
+    { "file": "math/easing.lua", "require": "libs/math/easing", "title": "Easing", "summary": "linear, quad_in, quad_out, quad_inout, cubic_in, cubic_out, bounce_out: map t in [0..1]." },
+    { "file": "math/lerp.lua",   "require": "libs/math/lerp",   "title": "Lerp", "summary": "lerp(a, b, t), clamp(v, lo, hi), map(v, in_lo, in_hi, out_lo, out_hi)." },
+    { "file": "math/vec2.lua",   "require": "libs/math/vec2",   "title": "Vec2", "summary": "new(x, y); v:add, :sub, :scale (each a new vector), :len, :dot." },
+    { "file": "util/str.lua",    "require": "libs/util/str",    "title": "String utils", "summary": "split(s, sep), starts_with, ends_with, trim." },
+    { "file": "util/tbl.lua",    "require": "libs/util/tbl",    "title": "Table utils", "summary": "size, contains, copy (shallow), keys." }
   ]
 }

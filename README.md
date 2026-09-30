@@ -1,45 +1,81 @@
 # Pika SDK
 
-Kho thông tin hỗ trợ cho **Pika Studio** — assets, tài liệu, thư viện Lua và
-game mẫu cho engine game Pika (Lua trên robot ESP32-S3).
+Build games for the **PIKA robot** without needing the robot.
 
-Đây là **repo độc lập, read-only**. Pika Studio nạp nó qua setting
-`pika.sdk.source` (đường dẫn thư mục cục bộ hoặc git URL; tool clone và
-`git pull` để cập nhật). Repo firmware không phụ thuộc kho này.
+PIKA runs a Lua 5.5 game engine on its head board: a 480 × 320 screen, three buttons plus
+HOME, a speaker, an RGB LED, four servos and English keyword voice. This SDK is the official
+source of truth for everything a game developer, or the AI assistant they vibe-code with,
+needs to build for it.
 
-## Bố cục
+| You want to | Start here |
+| --- | --- |
+| make your first game | [docs/start/getting-started.md](docs/start/getting-started.md) |
+| make a game with an AI assistant | [docs/guides/vibe-coding.md](docs/guides/vibe-coding.md) (the AI reads [skill/SKILL.md](skill/SKILL.md)) |
+| let Claude Code build it | open this folder in Claude Code and type `/pika-game <your idea>` |
+| sketch a game in the browser first | [docs/guides/design-a-demo.md](docs/guides/design-a-demo.md) · [kit/template/](kit/template/) |
+| look up a call or a limit | [docs/reference/api.md](docs/reference/api.md) · [contract/](contract/) |
+| see every stage and its gate | [docs/reference/pipeline.md](docs/reference/pipeline.md) |
+| find a quick answer | [docs/start/faq.md](docs/start/faq.md) |
 
+## How a game gets made
+
+```text
+ S1-S2 brief ─► S3 browser demo (optional) ─► S4-S5 Lua pack + smoke ─► S6 Pika Studio ─► S7 final assets ─► S8 publish ─► S9 robot check
+                kit/pika-frame.js              tools/smoke.py             the real engine,
+                same API + limits,             real Lua 5.5 against       compiled for a PC
+                live lints                     a stub built from the contract
+                playtest.js + check_spec.py
 ```
+
+Each stage has a gate: a command with an exact pass string, or a named human check
+([pipeline](docs/reference/pipeline.md)). No tool on a PC measures speed or checks `s.json`;
+only a robot proves those ([PC vs robot](docs/reference/known-issues.md#pc-vs-robot)).
+
+## Layout
+
+```text
 pika-sdk/
-├── sdk_version           # version hợp đồng API (tool đối chiếu firmware)
-├── sdk.index.json        # manifest gốc: kho có những phần nào
-├── assets/               # pack sprite/audio (Kenney) + index + script giải nén
-│   ├── 2D/ 3D/ Audio/ Pixel/ Textures/ UI/
-│   ├── assets.index.json     # catalog máy-đọc (id, loại, license, cover, counts)
-│   ├── unzip_assets.sh       # giải nén .zip → folder per-pack (idempotent)
-│   └── gen_assets_index.sh   # sinh assets.index.json từ pack đã giải nén
-├── docs/                 # tham chiếu API + hướng dẫn (getting-started, guide, api…)
-├── libraries/            # thư viện Lua chuẩn (bản gốc) — create-game copy từ đây
-└── examples/             # game mẫu chạy được, mỗi cái minh hoạ một mảng engine
+├── contract/      the source of truth
+│   ├── api.json          every Lua global, function, method, constant and hook   (generated)
+│   ├── constraints.json  every limit, derived value and behaviour fact           (generated)
+│   ├── semantics.json    the behaviour of every call and hook, known issues      (hand-written)
+│   └── pages/            reference pages written around {{key}} placeholders     (hand-written)
+├── docs/          for people: start/, guides/, concepts/, reference/, templates/ (docs/README.md)
+├── skill/         for AI assistants: routing, rules, recipes, templates (skill/SKILL.md)
+├── kit/           browser robot frame: pika-frame.js, pika-constraints.js, template/
+├── libraries/     Lua modules to copy into <game>/libs/
+├── examples/      runnable packs (pick_word = the kit template, ported)
+├── tools/         gen_contract.py · check_docs.py · smoke.py · playtest.js · check_spec.py · png2rgb565.py
+├── lua-5.5.0/     the Lua source the engine embeds, with the robot's build flags
+├── sdk_version    the SDK version (shown by Pika Studio)
+└── sdk.index.json section manifest read by Pika Studio
 ```
 
-Mỗi phần có một `*.index.json` để tool đọc mà không phải quét cây thư mục.
+Every section has a machine-readable index, so tools and AI assistants never need to scan
+the tree.
 
-## Version
+## Keeping it true
 
-`sdk_version` là số hợp đồng API mà kho này viết theo. Tool hiển thị nó và cảnh
-báo (mềm) nếu firmware trên board báo version khác — vì SDK và firmware là hai
-repo tách rời, đây là cách duy nhất phát hiện lệch.
+API names and numbers are never typed by hand. `tools/gen_contract.py` reads them from the
+firmware source and renders the reference pages; `tools/check_docs.py` checks everything
+else against the result.
 
-Mỗi lần tăng `sdk_version` phải thêm một mục vào [CHANGELOG.md](CHANGELOG.md)
-(quy tắc đánh version nằm ở đầu file đó).
+```bash
+python tools/gen_contract.py --firmware <pika-firmware checkout>   # regenerate contract/, kit/pika-constraints.js, reference pages
+python tools/gen_contract.py --check                               # exit 1 if anything generated is stale
+python tools/check_docs.py                                         # exit 1 on a wrong API name, number, link, anchor or index
+```
 
-## Assets
+How to change the SDK: [MAINTAINING.md](MAINTAINING.md). Why it is built this way:
+[RATIONALE.md](RATIONALE.md).
 
-Từ [Kenney](https://kenney.nl) — CC0 trừ khi `License.txt` của pack nói khác.
-Chỉ commit file `.zip` gốc + index; folder giải nén bị `.gitignore` (dựng lại
-bằng `assets/unzip_assets.sh`).
+## Versioning
 
-## Dùng trong tool
+`sdk_version` follows SemVer ([CHANGELOG.md](CHANGELOG.md)). The firmware does not report
+an API version, so the proof that this SDK matches a firmware build is
+`python tools/gen_contract.py --firmware <checkout> --check`.
 
-Xem [docs/getting-started.md](docs/getting-started.md).
+## Using it from Pika Studio
+
+Run **Pika: Configure SDK Source** and give this folder or its git URL. Studio reads
+`sdk.index.json` and shows the docs, examples and libraries.

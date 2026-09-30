@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pick_word demo</title>
+<style>
+  /* Ship the exact TTF the pack will use; text-fit lint measures with it. */
+  @font-face { font-family: "pk-ui"; src: url("fonts/regular.ttf"); }
+
+  /* Art: any CSS is allowed INSIDE a sprite (baked to PNG). Size is fixed. */
+  .bg    { width: 480px; height: 320px; background: linear-gradient(#2b3a67, #496a9e 70%, #6fa36b 70%); }
+  .card  { width: 132px; height: 84px; border-radius: 14px; background: radial-gradient(circle at 30% 20%, #fff7d6, #f2c14e);
+           box-shadow: 0 6px 0 #b8862b; display: flex; align-items: center; justify-content: center; font: 700 30px "pk-ui"; color: #6b3d00; }
+  .ring  { width: 144px; height: 96px; border: 4px solid #ffffff; border-radius: 18px; box-sizing: border-box; }
+  /* Multi-frame sprites are opaque .rgb565 strips: paint the backdrop colour in. */
+  .hero  { width: 64px; height: 64px; background: #6fa36b; }
+  .hero > div { width: 64px; height: 64px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<!-- Copy this folder OUTSIDE any game pack: Export copies the whole pack folder to SD. -->
+
+<template id="pika-art">
+  <div data-pika-sprite="assets/bg.rgb565" class="bg"></div>
+  <div data-pika-sprite="assets/card_cat.png" class="card">cat</div>
+  <div data-pika-sprite="assets/card_dog.png" class="card">dog</div>
+  <div data-pika-sprite="assets/card_sun.png" class="card">sun</div>
+  <div data-pika-sprite="assets/ring.png" class="ring"></div>
+  <!-- Multi-frame sprite: Sprite.new(strip, w, h) + set_frame(strip, idx) swaps [data-pika-frame] children. -->
+  <div data-pika-sprite="assets/hero.rgb565" class="hero">
+    <div data-pika-frame="0" style="background:#ffd23f"></div>
+    <div data-pika-frame="1" style="background:#7bd389;display:none"></div>
+    <div data-pika-frame="2" style="background:#ff6b6b;display:none"></div>
+  </div>
+</template>
+
+<script src="../pika-constraints.js"></script>
+<script>
+/* Manifest mirror: becomes manifest.json. `say` = the line to record (browser TTS stands in until the file exists). */
+window.PIKA_MANIFEST = {
+  id: "pick_word",
+  name: "Pick a Word",
+  input: { actions: { left: ["button:left"], right: ["button:right"], confirm: ["button:enter"] } },
+  fonts: { "fonts/regular.ttf": "pk-ui" },
+  sounds: {
+    ask:   { path: "assets/sounds/ask.wav",   say: "Which one is the cat?", lang: "en-US" },
+    right: { path: "assets/sounds/right.wav", say: "Great job!",            lang: "en-US" },
+    wrong: { path: "assets/sounds/wrong.wav", say: "Try again.",            lang: "en-US" },
+  },
+};
+
+/* ---- content: pure data, ports as a Lua table (indices become 1-based) ---- */
+const ROUNDS = [
+  { ask: "ask", answer: 1, cards: ["assets/card_dog.png", "assets/card_cat.png", "assets/card_sun.png"] },
+];
+const CARD_X = [16, 174, 332], CARD_Y = 120;
+const FONT = "fonts/regular.ttf";
+const HERO = "assets/hero.rgb565";
+const SAD_MS = 1500;   // back to the idle face even if on_sound_end never arrives
+
+/* ---- state: module level, like Lua file locals ---- */
+let bg, hero, ring, hud, hint;
+const cards = [];
+let cursor = 0, state = "ask", tween = null, lastRingX = -1, sadUntil = 0;
+
+/* Every factory can fail; game_start is the only place that may throw. */
+function need(what, [obj, err]) {
+  if (!obj) throw new Error(what + ": " + err);
+  return obj;
+}
+
+function mkText(str, x, y, size) {
+  const t = need("Text.new", Text.new(str, x, y));
+  const [, err] = t.set_font(FONT, size) || [];
+  if (err) throw new Error("set_font: " + err);
+  return t;
+}
+
+function calmHero() { hero.set_frame(HERO, 0); sadUntil = 0; }
+
+function tweenTo(spr, x, y, ms) {
+  const [x0, y0] = spr.get_pos();
+  tween = { spr, x0, y0, x, y, t0: Timer.millis(), ms };
+}
+
+function game_start(params) {
+  bg = need("bg", Sprite.new("assets/bg.rgb565", 480, 320));
+  bg.set_pos(0, 0);   // sprites stay hidden until first placed
+  const r = ROUNDS[0];
+  for (let i = 0; i < 3; i++) {
+    const c = need("card", Sprite.image(r.cards[i]));
+    c.set_pos(CARD_X[i], CARD_Y);
+    cards.push(c);
+  }
+  ring = need("ring", Sprite.image("assets/ring.png"));
+  hero = need("hero", Sprite.new(HERO, 64, 64));
+  hero.set_pos(208, 236);
+  hud = mkText("Round 1/1", 16, 12, 18);
+  hint = mkText("Left/Right: choose  -  Middle: confirm", 0, 0, 16);
+  hint.align("bottom", 0, -10);
+  Speaker.play(r.ask);
+}
+
+function on_tick(dt_ms) {
+  const rx = CARD_X[cursor] - 6;
+  if (rx !== lastRingX) { ring.set_pos(rx, CARD_Y - 6); lastRingX = rx; }   // cache-and-compare
+  if (tween) {
+    const k = Math.min(1, (Timer.millis() - tween.t0) / tween.ms);
+    const e = 1 - (1 - k) * (1 - k);
+    tween.spr.set_pos(Math.round(tween.x0 + (tween.x - tween.x0) * e), Math.round(tween.y0 + (tween.y - tween.y0) * e));
+    if (k >= 1) tween = null;
+  }
+  if (sadUntil && Timer.millis() >= sadUntil) calmHero();   // every wait has a timeout
+}
+
+function on_input(action, phase) {
+  if (phase !== Input.PRESS || state !== "ask") return;
+  if (action === "left")  cursor = (cursor + 2) % 3;
+  if (action === "right") cursor = (cursor + 1) % 3;
+  if (action === "confirm") {
+    const ok = cursor === ROUNDS[0].answer;
+    hero.set_frame(HERO, ok ? 1 : 2);
+    Speaker.play(ok ? "right" : "wrong");
+    if (ok) { state = "done"; tweenTo(hero, CARD_X[cursor] + 34, 60, 400); hud.set("Well done!"); }
+    else sadUntil = Timer.millis() + SAD_MS;
+  }
+}
+
+function on_sound_end(alias, reason) {
+  if (alias === "wrong" && reason === Speaker.REASON_COMPLETED) calmHero();
+}
+
+function game_end() {
+  Speaker.stop_all();
+  for (const c of cards) c.destroy();
+  for (const o of [bg, ring, hero, hud, hint]) if (o) o.destroy();
+}
+</script>
+<script src="../pika-frame.js"></script>
+</body>
+</html>

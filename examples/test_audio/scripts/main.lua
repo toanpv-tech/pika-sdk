@@ -1,6 +1,6 @@
--- audio: stress + behaviour suite for the engine_level >=6 Speaker surface.
+-- audio: stress + behaviour suite for the Speaker API.
 --
--- Layout (same runner as led_test / servo_test):
+-- Layout:
 --   row 1   = "RUN SUITE" meta entry (ENTER walks every test)
 --   row 2   = "Reset results"
 --   row 3+  = individual tests grouped by category
@@ -25,15 +25,16 @@
 --
 -- Pass criteria (head-side contract):
 --   * Lua API returns the documented bool (true on accept, false on reject).
---   * Finish events arrive via on_sound_end(alias, reason) with the right
---     reason: natural EOF -> COMPLETED, Speaker.stop -> STOPPED, overlap ->
---     PREEMPTED. A loop-flagged alias re-issues silently (no COMPLETED).
+--   * Finish events arrive via on_sound_end(alias, reason) at the start of
+--     the next frame with the right reason: natural EOF -> COMPLETED,
+--     Speaker.stop -> STOPPED, overlap -> PREEMPTED. A loop-flagged alias
+--     restarts silently (no COMPLETED); each restart counts as a play for the
+--     cooldown.
 --   * Cooldown gate rejects a tight play() flood (cooldown_reject grows).
 --
--- This suite doubles as the on-target check for the sound bridge: if
--- Speaker.play() returns false / no finish event ever fires, the main-side
--- AudioManager bridge (pika_sound_bridge.cpp) is not wired and the engine
--- is running audio-less. The DIAG test names that failure mode explicitly.
+-- On a robot this suite is also the end-to-end audio check: if Speaker.play()
+-- keeps returning false or no finish event ever fires, sound does not reach
+-- the speaker at all. The DIAG test names that failure mode.
 --
 -- Risk-aware design: every test wrapped in pcall, async tests own their
 -- timing and snapshot Speaker.stats() at arm + validate. The cooldown hot
@@ -58,11 +59,10 @@ local pcall, ipairs, pairs = pcall, ipairs, pairs
 local fmt    = string.format
 local concat = table.concat
 
-local clock_ms = (Engine and Engine.now_ms) or (Timer and Timer.millis)
-                 or function() return 0 end
+local clock_ms = Timer.millis
 
 -- ── Constants ────────────────────────────────────────────────────────
--- Manifest aliases (SD/games/audio/manifest.json -> audio.sounds).
+-- Manifest aliases (manifest.json -> audio.sounds).
 -- Behavioural aliases, mapped to the real assets on the card, sized per test:
 local A_SFX   = "sfx"        -- short WAV  (assets/audio/output.wav,      12 KB)
 local A_CLIP  = "clip"       -- shortest   (assets/audio/en_home.mp3,     11 KB)
@@ -70,7 +70,7 @@ local A_LONG  = "long"       -- longest    (assets/audio/en_greeting.mp3, 92 KB)
 local A_LOOP  = "loopclip"   -- loop=true  (assets/audio/en_home.mp3, short -> re-issues)
 
 -- Stress playlist: the spread of real production clips on the card (all mp3,
--- 11-92 KB) used by the "sweep" group to exercise the AudioManager bridge, SD
+-- 11-92 KB) used by the "sweep" group to exercise the robot's audio pipeline, SD
 -- path resolution and decoder setup/teardown across the WHOLE asset set rather
 -- than a single file. Each name is a manifest alias -> a distinct real file.
 -- (output.wav is intentionally excluded here: it is too short to still be
@@ -90,7 +90,7 @@ local FULL_PLAYLIST = {
 }
 local CLIP_MAX_MS = 30000   -- per-clip ceiling if no COMPLETED ever arrives
 
--- Mirror of GAME_SOUND_PLAY_COOLDOWN_US (sound_tuning.h <- CONFIG_GAME_SOUND_PLAY_COOLDOWN_MS, 150 ms).
+-- Mirror of sound_cooldown_ms in contract/constraints.json (150 ms).
 local COOLDOWN_MS = 150
 
 -- Reason code names for readable logs/HUD.
@@ -133,7 +133,7 @@ function on_sound_lost(count)
               count, finish.lost))
 end
 
--- ── Test registry (same shape as led_test / servo_test) ──────────────
+-- ── Test registry ────────────────────────────────────────────────────
 local TESTS = {}
 
 local function reg_meta(group, name, action)
@@ -324,7 +324,7 @@ reg_async("play", "clip -> COMPLETED (natural EOF)",
     function(st, _dt)
         if not st.ok then
             return true, false,
-                "play('clip') false (bridge unwired? asset missing?)"
+                "play('clip') false (asset missing? audio refused?)"
         end
         if finish.seq > st.base then
             local pass = (finish.alias == A_CLIP
@@ -399,7 +399,7 @@ reg_async("play", "play(clip) preempts long -> PREEMPTED",
             return false
         end
         if not st.ok2 then
-            return true, false, "play('clip') false (cooldown? bridge?)"
+            return true, false, "play('clip') false (cooldown? audio refused?)"
         end
         if finish.seq > st.base then
             local pass = (finish.alias == A_LONG
@@ -562,7 +562,7 @@ reg_async("stress", "stop_all silences pipeline",
             st.t_stop = clock_ms()
             return false
         end
-        -- allow the GMF pipeline to wind down before sampling is_busy
+        -- let the audio pipeline wind down before sampling is_busy
         if clock_ms() - st.t_stop < 800 then return false end
         local busy = Speaker_is_busy()
         return true, (not busy),
@@ -582,16 +582,17 @@ reg_sync("diag", "stats dump + DIAG hints", function()
 
     if s.played_total == 0 then
         print("audio DIAG: played=0 -> Speaker.play never accepted "
-              .. "(engine_level<6? Speaker==nil? bridge unwired -> "
-              .. "request_play returns 0?)")
+              .. "(sound files missing, aliases not in manifest audio.sounds, "
+              .. "or the robot refused every audio request)")
     end
     if s.error_count > 0 then
         print("audio DIAG: error_count>0 -> decode/IO errors "
               .. "(missing/corrupt asset or unsupported format)")
     end
     if s.finish_dropped > 0 then
-        print("audio DIAG: finish_dropped>0 -> finish ring overflow "
-              .. "(events produced faster than engine_task drains)")
+        print("audio DIAG: finish_dropped>0 -> on_sound_end queue overflow "
+              .. "(finishes produced faster than frames drain them; "
+              .. "on_sound_lost reports it too)")
     end
 
     return true, fmt("played=%d err=%d cooldown_rej=%d drop=%d",
@@ -599,15 +600,15 @@ reg_sync("diag", "stats dump + DIAG hints", function()
                      s.cooldown_reject, s.finish_dropped)
 end)
 
--- Final cleanup: silence + exit. Exit drives back's GameDispatchRaw
--- teardown; session end restores the T1 volume snapshot.
+-- Final cleanup: silence + exit. The engine restores the user's volume
+-- when the session ends.
 reg_sync("session", "Engine.exit (stop_all + restore)", function()
     Speaker_stop_all()
     Engine.exit("audio_done")
-    return true, "exit posted; session-end restores T1 volume"
+    return true, "exit posted; session end restores the user's volume"
 end)
 
--- ── Runner state (mirrors led_test / servo_test layout) ──────────────
+-- ── Runner state ─────────────────────────────────────────────────────
 local N_TESTS      = #TESTS
 local cursor       = 1
 local mode         = "single"
@@ -868,9 +869,7 @@ end
 
 -- ── Lua engine hooks ─────────────────────────────────────────────────
 function game_start()
-    local ev = (Engine and Engine.version and Engine.version()) or "?"
-    print(fmt("audio: game_start engine=%s tests=%d sounds=%d",
-              tostring(ev), N_TESTS, N_SOUNDS))
+    print(fmt("audio: game_start tests=%d sounds=%d", N_TESTS, N_SOUNDS))
     Speaker_stop_all()
     Speaker_set_volume(70)   -- audible, known baseline for play tests
     dirty()

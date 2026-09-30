@@ -1,18 +1,14 @@
 {
-  "version": "0.1.0",
-  "name": "Font Demo",
+  "name": {"vi": "Demo phông chữ", "en": "Font Demo"},
+  "version": "0.1.1",
+  "author": "Pika SDK",
   "main": "scripts/main.lua",
+  "peripherals": ["display", "button"],
   "input": {
     "actions": {
-      "left": [
-        "button:left"
-      ],
-      "right": [
-        "button:right"
-      ],
-      "fire": [
-        "button:enter"
-      ]
+      "left":  ["button:left"],
+      "right": ["button:right"],
+      "fire":  ["button:enter"]
     }
   }
 }

@@ -1,19 +1,20 @@
--- examples/font-demo — runtime TTF font test card via Text:set_font (tiny_ttf)
+-- test_font: runtime TTF font test card via Text:set_font
 --
 -- LEFT/RIGHT : cycle the faces. Entries 1-3 are the SAME latin/regular.ttf at
 --              16/24/32px — each (path,size) is a distinct cached face rendered
---              on demand by Tiny TTF. 4=bold (weight), 5/6=Vietnamese.
--- ENTER      : cycle the test cards (ASCII / Latin-1 / Tiếng Việt / Pangram /
+--              on demand. 4=bold (weight), 5/6=Vietnamese.
+-- ENTER      : cycle the test cards (ASCII / Latin-1 / Vietnamese / Pangram /
 --              Mixed) so every glyph range is exercised on the focused face.
 --
 -- What it verifies on device:
 --   * size:   latin/regular.ttf at 16 vs 24 vs 32 — same text, scalable.
 --   * weight: latin regular vs latin bold.
---   * range:  latin/* cover ASCII + Latin-1 + € only, so the Tiếng Việt / Mixed
+--   * range:  latin/* cover ASCII + Latin-1 + € only, so the Vietnamese / Mixed
 --             cards show MISSING glyphs on them (flagged) — the vi/* faces must
 --             render the diacritics + ₫. That contrast is the point.
 
--- Text:set_font(path, size): size is in px, rendered on demand by Tiny TTF.
+-- Text:set_font(path, size): size is in px. Six (path, size) pairs cycle on ONE
+-- label, so at most one face is pinned and the engine's face cache never fills.
 local FONTS = {
   { label = "latin regular", px = 16, path = "fonts/latin/regular.ttf", vi = false },
   { label = "latin regular", px = 24, path = "fonts/latin/regular.ttf", vi = false },
@@ -30,7 +31,7 @@ local SAMPLES = {
     text = "ABCDEFG abcdefg\n0123456789\n!?.,:;'\"()[]{}\n@#&%*+-=/<>" },
   { name = "Latin-1", vi = false,
     text = "àáâãäå æç èéêë\nìíîï òóôõö ùúûü ñ ß\nmoney: $ ¢ £ ¥ €" },
-  { name = "Tiếng Việt", vi = true,
+  { name = "Vietnamese", vi = true,
     text = "ăâđêôơư ĂÂĐÊÔƠƯ\nạảãàá ẹẻẽèé ịỉĩìí\nọỏõ ụủũ ỳỵỷỹ\ndong: 1.000₫" },
   { name = "Pangram", vi = false,
     text = "The quick brown fox jumps\nover the lazy dog\nPIKA 0123 - size 16 vs 24" },
@@ -41,16 +42,15 @@ local SAMPLES = {
 local idx  = 1   -- current font face
 local sidx = 1   -- current test card
 
--- One Text label, created lazily (Text.new needs the game screen).
+-- One Text label, created on first use (from game_start).
 local lbl
 local function set_line(s)
-  if not Text then return end
   if lbl then lbl:set(s) else lbl = Text.new(s, 4, 4) end
 end
 
 local function show()
   set_line("")           -- ensure the label exists before set_font
-  if not lbl then return end   -- no Text binding (headless test): nothing to show
+  if not lbl then return end   -- Text.new failed (pool full): nothing to show
   local f = FONTS[idx]
   local _, err = lbl:set_font(f.path, f.px)  -- MUTATOR: ok -> no value, fail -> nil,msg
   if err then

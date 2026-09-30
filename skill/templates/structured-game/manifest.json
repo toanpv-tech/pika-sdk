@@ -1,0 +1,22 @@
+{
+  "name": {"vi": "Game có cấu trúc", "en": "Structured Game"},
+  "version": "0.1.0",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button", "audio"],
+  "input": {
+    "actions": {
+      "confirm": ["button:enter"],
+      "left":    ["button:left"],
+      "right":   ["button:right"]
+    }
+  },
+  "audio": {
+    "sounds": {
+      "start": {"path": "assets/sounds/start.wav"},
+      "coin":  {"path": "assets/sounds/coin.wav"},
+      "miss":  {"path": "assets/sounds/miss.wav"},
+      "over":  {"path": "assets/sounds/over.wav"}
+    }
+  }
+}

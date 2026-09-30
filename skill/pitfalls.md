@@ -1,115 +1,74 @@
-# Pitfalls — lỗi thật → cách sửa
+# Pitfalls: symptom → cause → fix
 
-> Mỗi mục là một fail-mode **đã gặp thật**. Đọc trước khi debug; nhiều lỗi im lặng (game không chạy, không log rõ).
+> **Load when** a pack fails, a call returns `false`/`nil`, or the robot behaves differently from
+> the PC. Find the symptom or the log line, apply the fix, check the evidence. Run
+> `python tools/smoke.py <pack>` first: it reproduces most Lua and contract errors on a PC, not
+> the robot-only rows marked PC-* ([PC vs robot](../docs/reference/known-issues.md#pc-vs-robot)).
+>
+> Labels: ✅ proven in code · 🤖 seen on a robot · 🧪 heuristic, not measured · ⚠️ open
+> ([open-questions.md](open-questions.md)). `[fw: path:line]` paths are relative to
+> `head_esp32/components/game_engine/src/` unless they start with `head_esp32/` or `back_esp32/`.
+> Log lines: [telemetry.md](../docs/reference/telemetry.md). A Lua error in a hook prints
+> `pcall fail fn=<hook> msg="<file>:<line>: ..."` on the line before `game.error`.
 
-## 1. `unsafe path` khi tạo sprite trong `game_start`
+## Load and Lua
 
-**Triệu chứng:** `Sprite.image("images/x.png")` hoặc `Sprite.new(...)` với path game-relative raise `unsafe path` — nhưng **chỉ** trong `game_start`.
+| ID | Symptom | Log signature | Cause | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <a id="p1"></a>P1 | Game never starts | `game.error phase=load code=LUA_LOAD` (entry script; `LUA_RUNTIME` from a `libs/` module), `attempt to assign to const variable 'i'` | Lua 5.5 loop variables are read-only: the numeric-for variable and the **first** variable of a generic for. Compile error, the file never loads. | `while` loop or a separate local; assigning `v` in `for k, v` is legal | ✅ [fw: head_esp32/components/lua-5.5.0/lparser.c:320]; [lua-language.md](lua-language.md#lua-55-rules-that-break-old-habits) |
+| <a id="p2"></a>P2 | Game ends at the first use of a call | `code=LUA_RUNTIME`, `attempt to call a nil value (field '...')` | A name from another engine; reading an unknown field gives `nil`, calling it raises | Use only names in [api-contract.md](api-contract.md); feature-detect with `if Led.set then` | ✅ [api.md#calls-that-do-not-exist](../docs/reference/api.md#calls-that-do-not-exist) |
+| <a id="p3"></a>P3 | Game ends when something moves | `number has no integer representation` | A fractional coordinate (`x / 2`, an eased value) passed to an integer argument | `math.floor(x + 0.5)`; `//` for integer division | ✅ [api.md#conventions](../docs/reference/api.md#conventions) |
+| <a id="p4"></a>P4 | `require` fails | `require: unsafe module path` or a module-not-found error | Only `require("libs/<name>")` loads, and only when `<game>/libs/<name>.lua` exists | Copy the module and its dependencies ([libs-catalog.md](libs-catalog.md)); never fake a missing library | ✅ [api.md#sandbox](../docs/reference/api.md#sandbox), [fw: core/lua_require.c:57-58] |
+| <a id="p5"></a>P5 | Game fails to load after an edit that looks fine | `code=LUA_LOAD` or `LUA_RUNTIME`, `C stack overflow` | More than (`lua_maxccalls` = 30) nested C calls: deep `pcall`/metamethod/`require` chains, or one expression with about 20 chained `..` (the parser counts too). smoke.py uses desktop limits (PC-CCALLS). | Build long strings with `table.concat`; flatten `pcall` nesting | ✅ [api.md#sandbox](../docs/reference/api.md#sandbox), PC-CCALLS |
+| <a id="p6"></a>P6 | Timers or scores go wrong after large values | none | Integers are 32-bit on the robot and wrap; smoke.py and Pika Studio use 64-bit (PC-INT) | Keep integers below 2^31; compare `Timer.millis()` differences ([KI-MILLIS-WRAP](../docs/reference/known-issues.md#ki-millis-wrap)) | ✅ [api.md#conventions](../docs/reference/api.md#conventions), PC-INT |
+| <a id="p7"></a>P7 | Near the heap limit the game ends or hitches | `err=OOM`, `arena_pk` close to the heap size | Allocation past the Lua heap; near the limit a game can be tagged OOM although the emergency GC could have recovered | Allocate once, reuse tables, no per-frame strings; watch `arena`/`arena_pk` | ✅ [KI-OOM-EDGE](../docs/reference/known-issues.md#ki-oom-edge) |
 
-**Nguyên nhân:** `current_game_id` chưa set kịp lúc `game_start` chạy → path join thất bại.
+## Hooks and handles
 
-**Fix:** Tạo sprite/anim ở **frame `on_tick` đầu tiên**, không trong `game_start`:
+| ID | Symptom | Log signature | Cause | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <a id="p8"></a>P8 | A scene change does nothing; the old `on_tick` keeps running | none | <a id="hook-rebind"></a>**HOOK-REBIND**: `on_tick` and `on_input` are bound once, right after the top level; assigning them later is ignored | Define both at the top level; switch with a state variable inside one `on_tick` | ✅ [api.md#hooks](../docs/reference/api.md#hooks) |
+| <a id="p9"></a>P9 | A sprite or label vanishes mid-game; a `Text` slot stays taken | none | <a id="handle-gc"></a>**HANDLE-GC**: a handle no Lua variable references is destroyed at the next garbage collection (a dropped `Text`/`Shape` holds its slot until then) | Keep every handle in a table or local that lives as long as the object | ✅ [api.md#conventions](../docs/reference/api.md#conventions) |
+| <a id="p10"></a>P10 | Game ends on an error in a hook | `game.error phase=on_tick\|on_input\|on_sound_end code=LUA_RUNTIME` | Uncaught error in those hooks ends the game; in `game_start` the load fails; in `on_voice_event` it is logged and the game continues (`end=err`) | Check `nil, msg`/`false` returns instead of raising | ✅ [api.md#hooks](../docs/reference/api.md#hooks) |
+| <a id="p11"></a>P11 | Pack starts then ends at once, or freezes then exits | `code=LUA_WATCHDOG`, `watchdog: Lua pcall exceeded ...`; or `game.stalled` | A hook ran past (`hook_watchdog_ms` = 1500): a waiting loop or many image loads in one hook. The watchdog samples Lua instructions, so one long native call is caught only when it returns; a stuck native call hits the stall detector. | Load the first screen, then a few per tick ([performance.md](performance.md#spread-loads-across-ticks)); never `while` on an external condition | ✅ [api.md#hooks](../docs/reference/api.md#hooks); 🤖 a game creating many sprites in one hook was killed on the robot but passed Pika Studio |
+| <a id="p12"></a>P12 | HOME exits when it should not, or does not exit | `game.stop end=home` | `on_home` returning any truthy value keeps the game; `nil`/`false`/no hook exits. HOME held (`home_force_exit_ms` = 1500) force-exits whatever it returns. | Return `true` only while you show your own prompt | ✅ [api.md#hooks](../docs/reference/api.md#hooks) |
+| <a id="p13"></a>P13 | Timers run about 10% fast, or drift when frames are late | none | `dt_ms` is nominal (`dt_ms` = 33) but frames are (`tick_period_ms` = 30) ms apart | Drive every timer and motion from `Timer.millis()` differences | ✅ [KI-DT-NOMINAL](../docs/reference/known-issues.md#ki-dt-nominal) |
 
-```lua
-local player
-function on_tick()
-  if not player then
-    player = Sprite.image("images/player.png")
-    if player then player:set_pos(100, 100) end
-    return
-  end
-  -- logic bình thường
-end
-```
+## Display and text
 
-`Text.new` **không** dính lỗi này — tạo trong `game_start` OK. `Sprite.solid` (không path) cũng an toàn hơn nhưng vẫn nên tạo trễ để nhất quán.
+| ID | Symptom | Log signature | Cause | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <a id="p14"></a>P14 | Error on a factory or method right after creating something | `attempt to index a nil value`; `game.warn "Text.new":n` | The factory returned `nil, msg`: `pool_full` (more than (`text_slots` = 8) `Text` or (`line_slots` = 8) lines), missing file, no PSRAM | Check every factory result; reuse `Text` across scenes | ✅ [api.md#text](../docs/reference/api.md#text), [api.md#shape](../docs/reference/api.md#shape) |
+| <a id="p15"></a>P15 | `unsafe ... path` raised | `unsafe sprite path: ...` | Absolute path, backslash, control character, empty segment (`a//b`, trailing `/`), `.` or `..`, or a relative path longer than (`sandbox_rel_path_budget` = 188) minus the game id length | `"assets/hero.png"`, forward slashes, short names | ✅ [api.md#conventions](../docs/reference/api.md#conventions), [fw: bindings/bindings_util.c:37-60] |
+| <a id="p16"></a>P16 | A sprite never appears | none | New sprites stay hidden until the first `set_pos`/`set_visible`; or an object created later covers it | `set_pos` right after creating; see P17 for order | ✅ [api.md#sprite](../docs/reference/api.md#sprite) |
+| <a id="p17"></a>P17 | Text hidden behind a sprite | none | One draw list in creation order; `Text` has no `set_z`; a re-created sprite lands on top | Create `Text` last; after re-creating a sprite, `to_front()` what must stay above | ✅ [api.md#text](../docs/reference/api.md#text) |
+| <a id="p18"></a>P18 | Font change does nothing | `set_font` returns `nil, msg` | More than (`font_slots` = 4) (path, size) faces in use; a new size is a new face | List faces at the top of `main.lua`; test `ok == nil and err` | ✅ [api.md#fonts](../docs/reference/api.md#fonts) |
+| <a id="p19"></a>P19 | Boxes instead of letters; accents missing | none | The default font covers little beyond ASCII; a TTF renders only its own glyphs; `#str` counts bytes. 🧪 Below ~14 px stacked diacritics (ể, ứ) lose strokes (not measured). | Ship a TTF covering every character; `utf8.len`; symbols as images ([recipes/localized-text.md](recipes/localized-text.md)) | ✅ [api.md#fonts](../docs/reference/api.md#fonts); 🧪 size |
+| <a id="p20"></a>P20 | Scale or rotation does nothing | returns `false` | A side exceeds (`transform_max_px` = 96) | Check the return; pre-render large sizes and angles | ✅ [api.md#transform-limit](../docs/reference/api.md#transform-limit) |
+| <a id="p21"></a>P21 | `set_frame` returns `false` or shows garbage | none | The strip is not raw frames in the sprite's **own** format (`w*h*2` for `Sprite.new`, `Sprite.solid`, opaque PNG; `w*h*3` for PNG with alpha), `i` is past the end, or it is a PNG file (read as raw bytes) | Build strips in the sprite's format (`tools/png2rgb565.py` for `.rgb565`); call only on change | ✅ [api.md#sprite](../docs/reference/api.md#sprite), [fw: render/lvgl_renderer.c:952-979] |
+| <a id="p22"></a>P22 | A flipped sprite shows unflipped after `set_frame` | none | `set_frame` drops the flip but the engine keeps the recorded state | Ship pre-flipped frames, or call `set_flip(false, false)` **before** each `set_frame` and the wanted state after it | ✅ [KI-FLIP-FRAME](../docs/reference/known-issues.md#ki-flip-frame) |
+| <a id="p23"></a>P23 | Hitches on scene or look change | `game.running` high `tick_us`/`p95`, single big `gap_us` | Loads during play (`Sprite.image`, `set_frame`, `set_font`, `Anim.new`) run under the display lock; `set_flip` rewrites every pixel. `Text:set` of an identical short string is already skipped by the engine; the cost left is building the string in Lua. | Create large sprites once and toggle them; send only on change ([performance.md](performance.md)) | ✅ [api.md#hooks](../docs/reference/api.md#hooks), [fw: render/lvgl_renderer.c:319-322] |
+| <a id="p24"></a>P24 | An `Anim` restarts or does not stop as expected | none | `Anim.new` stops nothing; `a:play()` stops the other Anim and rewinds only if this one had ended (a paused or playing Anim continues) | `a:stop()` before `a:play()` to restart from frame 0 | ✅ [api.md#anim](../docs/reference/api.md#anim) |
+| <a id="p25"></a>P25 | Collisions missed or too generous | none | `intersects`/`hit_test` use the bounding box, transparent pixels included | Tight sprites or an invisible `Sprite.solid` hitbox | ✅ [api.md#sprite](../docs/reference/api.md#sprite) |
 
-## 2. Sprite nháy ở góc trái-trên (0,0) khi load
+## Sound, voice, LED, ranking
 
-**Triệu chứng:** Sprite lóe 1 frame ở `(0,0)` rồi mới về đúng chỗ.
+| ID | Symptom | Log signature | Cause | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <a id="p26"></a>P26 | A sound does not play or is cut short | `game.warn "Speaker.play":n` or `"Speaker.play/alias":n` | A path instead of an alias; alias not under `audio.sounds`; two plays within (`sound_cooldown_ms` = 150); one channel preempts | Declare every alias; when two events fire together play the one that matters | ✅ [api.md#speaker](../docs/reference/api.md#speaker) |
+| <a id="p27"></a>P27 | Flow waiting on `on_sound_end` runs one frame late or never | `drop=.../<snd>/<nohook>/...` | `Speaker.stop` delivers `on_sound_end` at the start of the next frame; finish events can be lost | Add a `Timer.millis()` timeout to every wait on a sound | ✅ [api.md#speaker](../docs/reference/api.md#speaker) |
+| <a id="p28"></a>P28 | Whole pack rejected at load | `game.error phase=load code=PACK_MANIFEST` (an oversized manifest: `PACK_NOT_FOUND`) | Missing sound file, too many aliases or actions, `path` and `url` on one sound, oversized manifest | Ship placeholder audio under the final names; smoke.py checks these | ✅ [manifest.md#when-a-pack-does-not-open](../docs/reference/manifest.md#when-a-pack-does-not-open) |
+| <a id="p29"></a>P29 | Voice never triggers | none, or `on_voice_event` with `code=busy` | `"voice"` missing from `peripherals`; keywords sent from the top level or `game_start` (dropped: the session starts after `game_start` returns); `set_keywords` returned `nil, reason` unchecked; non-English words. `Voice.start` is not needed: `set_keywords` starts listening. | Send keywords in the first `on_tick`; read `e.data.keyword` (the `e.keyword` in an engine comment is stale [fw: bindings/bind_voice.c:17]) | ✅ [api.md#voice](../docs/reference/api.md#voice), PC-VOICE; ⚠️ [q-voice-shape](open-questions.md#q-voice-shape) |
+| <a id="p30"></a>P30 | Changing keywords keeps the old list | `on_voice_event` `{type="error", code="busy"}` | A second `set_keywords` while connecting or listening is refused | `Voice.stop()` then `set_keywords(new)`; the robot reconnects (a short deaf gap) | ✅ [api.md#voice](../docs/reference/api.md#voice), [fw: back_esp32/main/src/application/game_voice/game_voice.cpp:537-561] |
+| <a id="p31"></a>P31 | Game ends when the network drops | `voice_ws_failed code=... action=end_game` (body board) | With `"voice"` declared, `connect_failed`, `connect_timeout`, `ws_disconnected`, `ws_error` end the game | Declare `"voice"` only when the game uses it; other codes continue | ✅ [api.md#voice-events](../docs/reference/api.md#voice-events), [fw: back_esp32/main/src/application/game_voice/game_voice.cpp:157-174] |
+| <a id="p32"></a>P32 | LED "listening" colour wrong after a keyword swap | none | There is no engine listening LED: any such colour is the game's own `Led` call | Re-apply your LED state after `Voice.stop` → `set_keywords` | ✅ no LED call in the voice path [fw: bindings/bind_voice.c], [fw: back_esp32/main/src/application/game_voice/game_voice.cpp] |
+| <a id="p33"></a>P33 | No rank ever arrives | none | `Ranking.report` `true` only means the score left the head board; it is dropped when the game was not started from the menu, and in talk-flow (A2A) it goes to the conversation | Show the rank only when a result arrives; give up after a deadline (🧪 ~6 s, not measured) | ✅ [api.md#ranking](../docs/reference/api.md#ranking) |
+| <a id="p34"></a>P34 | Game-over shows the previous round's rank | none | `get_result` is consume-once; a late answer to the previous round is read as the new one 🧪 | Call `Ranking.get_result()` once when a round starts and discard it ([recipes/leaderboard.md](recipes/leaderboard.md)) | ✅ consume-once [api.md#ranking](../docs/reference/api.md#ranking); 🧪 timing |
 
-**Nguyên nhân:** Sprite hiện ngay khi tạo, trước khi bạn `set_pos`.
+## Packaging
 
-**Fix:** Engine đã tạo sprite **ẩn**, chỉ lộ ở lần `set_pos`/`set_visible` đầu. Nên **luôn `set_pos` ngay sau khi tạo**, cùng frame:
+| ID | Symptom | Log signature | Cause | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| <a id="p35"></a>P35 | Works in Pika Studio, refused on the robot | `game.error phase=load code=VALIDATOR` (`LUA_LOAD` for the entry script) | The robot runs only files matching `s.json`, issued when the pack is published through the Pika platform; Studio neither creates nor checks it | Publish (again) through the Pika platform; never create or edit `s.json` | ✅ PC-SJSON |
 
-```lua
-player = Sprite.solid(24, 24, 0x07E0)
-if player then player:set_pos(x, y) end   -- set_pos ngay, đừng để tới frame sau
-```
-
-## 3. Gọi API không tồn tại (im lặng hoặc raise)
-
-**Triệu chứng:** `attempt to call a nil value (field 'now_ms')`, hoặc game chết trong hook.
-
-**Nguyên nhân:** Bịa API từ engine khác. Hay gặp: `Engine.now_ms`, `os.time`, `spr:rotate`, `require("json")`, `Voice.listen`.
-
-**Fix:** Đối chiếu [api-contract.md](api-contract.md), mục "API KHÔNG tồn tại". Thời gian = `Timer.millis()`. Va chạm = `spr:intersects`. **Không có API lưu** (`State.*` đã bị gỡ).
-
-## 4. Vượt Text pool → nil
-
-**Triệu chứng:** `Text.new` trả `nil` (kèm `"pool_full"`), rồi `t:set(...)` raise vì `t` là nil.
-
-**Nguyên nhân:** > 8 Text handle sống cùng lúc.
-
-**Fix:** Tái dùng handle (giữ label, đổi bằng `:set`), `:destroy()` label không cần nữa. **Luôn check nil** sau `Text.new`:
-
-```lua
-local hud = Text.new("", 4, 4)
-if not hud then return end   -- pool_full
-```
-
-## 5. Hook block > 1.5s → watchdog giết game
-
-**Triệu chứng:** Game đứng hình, có thể reset; log watchdog.
-
-**Nguyên nhân:** `while` chờ điều kiện, tính toán nặng mỗi frame, hoặc nạp asset trong `on_tick`.
-
-**Fix:** Không vòng chờ. Trải việc qua nhiều `on_tick` đo bằng `Timer.millis()`. Nạp asset nặng ở `game_start`, không mỗi frame.
-
-## 6. Âm thanh "File not found" dù file có thật
-
-**Triệu chứng:** `Speaker.play` false, log không tìm thấy file.
-
-**Nguyên nhân:** Không truyền **đường dẫn file** cho Speaker — phải dùng **alias** khai trong `manifest.audio.sounds`. (Lỗi double-prefix `/sd/sd` từng xảy ra ở firmware, nay đã fix.)
-
-**Fix:** Khai alias trong manifest, gọi `Speaker.play("<alias>")`, không `Speaker.play("audio/hit.wav")`.
-
-## 7. Va chạm không nhận
-
-**Triệu chứng:** Nhân vật chạm nhau nhưng `intersects` false.
-
-**Nguyên nhân:** Chỉ có **AABB** (hộp chữ nhật thẳng trục), không phải pixel-perfect. Sprite trong suốt vẫn tính cả khung. Hoặc quên rằng sprite ẩn (chưa set_pos) có vị trí không xác định.
-
-**Fix:** Chấp nhận AABB; canh kích thước sprite sát nhân vật. Đảm bảo cả 2 sprite đã `set_pos`.
-
-## 8. Voice không phản hồi
-
-**Triệu chứng:** Nói keyword nhưng `on_voice_event` không kích hoạt.
-
-**Nguyên nhân thường gặp:**
-- Chưa gọi `Voice.start()` sau `Voice.set_keywords`.
-- `set_keywords` trả `(nil, reason)` (vd `too_many_keywords`, `payload_too_big`) mà không check.
-- Keyword không phải tiếng Anh (backend keyword-spotting tiếng Anh).
-- Vào nhánh sai trong `on_voice_event`: phải check `e.type == "VOICE_COMMAND"` rồi `e.data.keyword`.
-
-**Fix:** Xem mẫu đầy đủ [recipes/voice-keyword-trigger.md](recipes/voice-keyword-trigger.md). Luôn check giá trị trả về của `set_keywords`.
-
-## 9. Game chạy simulator nhưng board thật từ chối
-
-**Triệu chứng:** OK trong Pika Studio, board thật fail-close không chạy.
-
-**Nguyên nhân:** `s.json` (CRC nội dung) lệch vì bạn sửa `.lua/.png/.json` mà chưa regen.
-
-**Fix:** Sau khi sửa bất kỳ file game, regen: `python tools/crc32/sjson_genorator.py --sd <đường-dẫn-game>`. Simulator không bắt CRC nên không lộ lỗi này.
-
-## 10. `require` module ngoài fail
-
-**Triệu chứng:** `require("json")` / `require("mylib")` → module not found.
-
-**Nguyên nhân:** Sandbox chỉ nạp `require("libs/x")` = `<game>/libs/x.lua`.
-
-**Fix:** Copy lib cần dùng vào `<game>/libs/` (từ SDK `libraries/`, hoặc extension nút "Add to a game…" tự kéo cả dependency). Không có API lưu trạng thái nên không cần thư viện JSON để persist.
-
----
-
-_Nếu gặp fail-mode chưa có ở đây và tái hiện được, đó là ứng viên thêm vào file này._
+A reproducible failure not listed here belongs in this table with its evidence.

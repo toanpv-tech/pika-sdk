@@ -1,17 +1,14 @@
 {
-  "version": "0.1.0",
-  "name": "Voice Probe",
+  "name": {"vi": "Thử giọng nói", "en": "Voice Probe"},
+  "version": "0.2.0",
+  "author": "Pika SDK",
   "main": "scripts/main.lua",
-  "peripherals": ["voice"],
+  "peripherals": ["display", "button", "voice"],
   "input": {
     "actions": {
       "fire": ["button:enter"],
       "prev": ["button:left"],
       "next": ["button:right"]
     }
-  },
-  "assets": {
-    "sprites": [],
-    "audio": []
   }
 }

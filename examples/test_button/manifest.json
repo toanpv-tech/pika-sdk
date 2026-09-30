@@ -1,16 +1,14 @@
 {
-  "version": "0.1.0",
-  "name": "Button Stress Test",
+  "name": {"vi": "Kiểm tra nút bấm", "en": "Button Stress Test"},
+  "version": "0.1.1",
+  "author": "Pika SDK",
   "main": "scripts/main.lua",
+  "peripherals": ["display", "button"],
   "input": {
     "actions": {
       "enter": ["button:enter"],
       "left":  ["button:left"],
       "right": ["button:right"]
     }
-  },
-  "assets": {
-    "sprites": [],
-    "audio": []
   }
 }

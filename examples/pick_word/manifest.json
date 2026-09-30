@@ -1,0 +1,21 @@
+{
+  "name": {"vi": "Chọn từ", "en": "Pick a Word"},
+  "version": "1.0.1",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["audio", "display", "button"],
+  "input": {
+    "actions": {
+      "left":    ["button:left"],
+      "right":   ["button:right"],
+      "confirm": ["button:enter"]
+    }
+  },
+  "audio": {
+    "sounds": {
+      "ask":   {"path": "assets/sounds/ask.wav"},
+      "right": {"path": "assets/sounds/right.wav"},
+      "wrong": {"path": "assets/sounds/wrong.wav"}
+    }
+  }
+}

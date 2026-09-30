@@ -1,10 +1,52 @@
 {
   "schema": "pika-sdk-examples/1",
-  "note": "Game mẫu chạy được. Tool copy vào vùng làm việc khi Open; Export sẽ regen s.json.",
+  "note": "Runnable example games. Pika Studio copies one into the workspace with Pika: New Game from Example. s.json checksums are issued when a pack is published through the Pika platform; Studio neither creates nor checks them.",
   "examples": [
-    { "dir": "test_button", "name": "Button Stress Test", "demonstrates": ["input", "text"], "summary": "Nhập 3 nút + Text pool. Nhẹ nhất, không cần codec — điểm khởi đầu tốt." },
-    { "dir": "test_font",   "name": "Font Demo",          "demonstrates": ["text", "font"], "summary": "Text với font TTF runtime, nhiều cỡ." },
-    { "dir": "test_voice",  "name": "Voice Probe",         "demonstrates": ["voice"], "summary": "Voice keyword-spotting: set_keywords + start, xử lý on_voice_event." },
-    { "dir": "test_audio",  "name": "Audio Stress Test",   "demonstrates": ["speaker"], "summary": "Speaker: play/stop/preempt, loop, on_sound_end, volume." }
+    {
+      "dir": "test_button",
+      "name": "Button Stress Test",
+      "demonstrates": [
+        "input",
+        "text"
+      ],
+      "summary": "Three-button input and the Text pool. The lightest example, no codec needed: a good starting point."
+    },
+    {
+      "dir": "test_font",
+      "name": "Font Demo",
+      "demonstrates": [
+        "text",
+        "font"
+      ],
+      "summary": "Text with runtime TTF fonts at several sizes, and glyph coverage per font."
+    },
+    {
+      "dir": "test_voice",
+      "name": "Voice Probe",
+      "demonstrates": [
+        "voice"
+      ],
+      "summary": "Voice keyword spotting probe: keyword list limits, on_voice_event handling and connection latency. Needs a voice server (Pika: Configure Voice ASR Server) or a robot."
+    },
+    {
+      "dir": "test_audio",
+      "name": "Audio Stress Test",
+      "demonstrates": [
+        "speaker"
+      ],
+      "summary": "Speaker: play/stop/preempt, looping, on_sound_end, volume."
+    },
+    {
+      "dir": "pick_word",
+      "name": "Pick a Word (demo + Lua pair)",
+      "demonstrates": [
+        "kit",
+        "sprite",
+        "text",
+        "speaker",
+        "input"
+      ],
+      "summary": "Reference pair for the demo-to-Lua workflow: the Lua port of the kit demo in kit/template/index.html. Cursor over three cards, confirm, frame swap, tween, recorded voice lines."
+    }
   ]
 }

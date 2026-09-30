@@ -1,30 +1,43 @@
-# Pika Engine — Tài liệu
+# Pika SDK documentation
 
-Tài liệu tham chiếu cho **Pika Engine** — runtime game viết bằng Lua 5.5.0, nạp
-game pack từ thẻ SD và điều khiển ngoại vi robot. Đây là bản trong **Pika SDK**;
-tool Pika Studio hiển thị các trang này trực tiếp.
+Everything for making educational games for the PIKA robot. New here? Start with
+[Getting started](start/getting-started.md). An AI assistant starts at
+[skill/SKILL.md](../skill/SKILL.md) instead.
 
-| Tài liệu | Đối tượng | Nội dung |
-|---|---|---|
-| [Bắt đầu nhanh](getting-started.md) | Người mới | Cài tool → mở game mẫu → Run → sửa → Export. Đọc đầu tiên. |
-| [Tổng quan](overview.md) | Đội phát triển game | Ngoại vi điều khiển được, hai luồng chơi (Offline / A2A), ràng buộc tài nguyên. |
-| [Guide](guide.md) | Người viết game (Lua) | Cách viết game pack: `manifest.json`, cấu trúc SD, vòng đời & hook, sandbox. |
-| [manifest.json](manifest.md) | Người viết game (Lua) | Schema v2 đầy đủ: `name`/`main`/`peripherals`, input map, audio, servo. |
-| [API Reference](api.md) | Người viết game (Lua) | Tra cứu toàn bộ API Lua (~60 hàm) + bảng tra giá trị nhanh. |
-| [Module Firmware](module.md) | Kỹ sư firmware | Kiến trúc nội bộ component `game_engine` (tham khảo). |
-| [Monitor](monitor.md) | Khi chạy trên board | Log theo vòng đời game để chẩn đoán. |
+## Find your page
 
-## Bắt đầu nhanh
+| You are | You want to | Read |
+| --- | --- | --- |
+| alone, with an AI assistant | make a whole game | [Vibe-code a game](guides/vibe-coding.md) |
+| a team | split the work and hand it over cleanly | [Team workflow](guides/team-workflow.md) |
+| anyone | see every stage and how it is proven done | [Pipeline](reference/pipeline.md) |
+| a designer or developer | try a game in the browser first | [Design a demo](guides/design-a-demo.md) |
+| a developer | write a Lua game pack | [Write a game pack](guides/write-a-game-pack.md) |
+| a developer | turn a browser demo into Lua | [Port a demo](guides/port-a-demo.md) |
+| an artist or audio person | deliver files the robot uses as they are | [Prepare assets](guides/prepare-assets.md) |
+| QA | publish and check a game on a robot | [Release checklist](guides/release-checklist.md) |
+| anyone | get a quick answer to a common question | [FAQ](start/faq.md) |
 
-- **Chưa từng dùng?** → [Bắt đầu nhanh](getting-started.md)
-- **Engine làm được gì?** → [Tổng quan](overview.md)
-- **Viết một game?** → [Guide · Quickstart](guide.md)
-- **Khai báo manifest?** → [manifest.json](manifest.md)
-- **Tra cứu API Lua** → [API Reference](api.md)
+## By kind
 
-> Đây là kho tham chiếu (read-only), đồng bộ từ `docs/pika-engine` của repo
-> firmware. Khi engine đổi public API / binding / manifest schema, tài liệu ở
-> đây được cập nhật theo và `sdk_version` tăng lên.
->
-> Các liên kết tới mã nguồn firmware (`head_esp32/...`) được giữ ở dạng tên file
-> vì SDK là repo độc lập, không chứa mã firmware.
+| Kind | For | Pages |
+| --- | --- | --- |
+| **Start** | follow once, end with working tools; quick answers | [Getting started](start/getting-started.md) · [FAQ](start/faq.md) |
+| **Guides** | reach one goal, step by step | the table above |
+| **Concepts** | why the robot and engine work this way | [Overview](concepts/overview.md) |
+| **Reference** | exact facts, generated from or checked against the firmware | [Pipeline](reference/pipeline.md) · [API](reference/api.md) · [manifest.json](reference/manifest.md) · [Telemetry](reference/telemetry.md) · [Known issues](reference/known-issues.md) |
+| **Templates** | fill in or copy | [Brief](templates/brief-template.md) · [Prompts](templates/prompts.md) · [Guide template](templates/_guide-template.md) |
+
+## How these pages stay true
+
+- The API, manifest, telemetry and known-issues pages are **generated** by
+  `tools/gen_contract.py` from the firmware source and `contract/semantics.json`; never edit
+  them by hand. A name that is not in `contract/api.json` does not exist on the robot.
+- Guides say what to do and link to the reference for facts. They do not repeat signatures
+  or limits; a number that helps the reader is written as (`key` = value) and checked.
+- `tools/check_docs.py` fails on a broken link or anchor, an unknown API name, a number that
+  disagrees with the contract, or an index that is out of date.
+
+Writing a new page: copy the [guide template](templates/_guide-template.md) and follow
+[MAINTAINING.md](../MAINTAINING.md). Why the SDK is organised this way:
+[RATIONALE.md](../RATIONALE.md).

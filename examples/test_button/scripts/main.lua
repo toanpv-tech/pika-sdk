@@ -1,5 +1,5 @@
 -- button: input-pipeline stress + invariant suite for the engine's
--- action-mapped Input surface (bind_input.c + input_pump.c).
+-- action-mapped Input API.
 --
 -- Unlike led/servo (where Lua DRIVES output and reads stats), input is
 -- an INBOUND stream: Lua cannot synthesise button presses, so the stress
@@ -13,8 +13,8 @@
 --        * is_down() (poll) agrees with the PRESS/RELEASE callbacks
 --        * just_pressed/just_released true for EXACTLY one tick
 --        * Input.stats().dropped_total / seq_gaps never grow (any growth
---          = the SPSC ring overflowed or an event was lost on the
---          back->head IPC/forward path)
+--          = the engine's input ring overflowed or an event was lost
+--          between the buttons and the engine)
 --      Faults are counted, ring-logged, and printed as they happen.
 --
 --   2. Guided CAPTURE TESTS that prompt the operator ("Tap ENTER once",
@@ -35,10 +35,8 @@
 --   * Every Input.* call returns the documented type/value.
 --   * Zero protocol faults across the session.
 --   * Under mashing: dropped_total == 0 AND seq_gaps == 0.
---   * Cadence/hold values are reported (operator/OTD confirms timing).
+--   * Cadence/hold values are reported (the operator confirms timing).
 --
--- Reference: pika_engine_old SD/games/input_test (basic counter); this is
--- the worldclass re-do matching the new led/servo stress-suite house style.
 
 -- ── Localize hot upvalues ────────────────────────────────────────────
 local Input_is_down       = Input.is_down
@@ -60,21 +58,21 @@ local concat = table.concat
 local huge   = math.huge
 local floor  = math.floor
 
-local clock_ms = (Engine and Engine.now_ms) or (Timer and Timer.millis)
-                 or function() return 0 end
+local clock_ms = Timer.millis
 
--- ── Constants (mirror engine internals; drift => a test FAILs) ────────
--- PIKA_INPUT_RING_SZ in input_internal.h. The mash tests must never push
--- more than this many events between two engine_task drains, or
+-- ── Constants (mirror contract/constraints.json; drift => a test FAILs) ──
+-- Input ring depth (input_ring_slots in contract/constraints.json). The mash tests must never push
+-- more than this many events between two engine frames, or
 -- dropped_total climbs - which is exactly the failure we watch for.
 local RING_SZ         = 32
--- Back-side auto-repeat timing (back_esp32 button.h). Head only OBSERVES
--- the forwarded REPEAT stream; exact cadence is hardware/IPC-dependent so
+-- Button auto-repeat timing (button_repeat_delay_ms / button_repeat_rate_ms in
+-- contract/constraints.json). The game only OBSERVES the REPEAT stream; the
+-- exact cadence depends on the hardware path, so
 -- these are expectation hints, not hard gates.
-local REPEAT_DELAY_MS = 400        -- GAME_REPEAT_DELAY_MS: hold before 1st REPEAT
-local REPEAT_RATE_MS  = 80         -- GAME_REPEAT_RATE_MS: nominal gap between REPEATs
+local REPEAT_DELAY_MS = 400        -- hold before 1st REPEAT
+local REPEAT_RATE_MS  = 80         -- nominal gap between REPEATs
 local REP_DT_LO       = 40         -- soft lower bound for observed repeat dt
-local REP_DT_HI       = 300        -- soft upper bound (frame + IPC jitter headroom)
+local REP_DT_HI       = 300        -- soft upper bound (frame + transport jitter headroom)
 local PRESS_HOLD_TOL  = 60         -- a PRESS should arrive with hold_ms ~0
 local TAP_SETTLE_MS   = 400        -- quiet gap that ends a "single tap" capture
 
@@ -92,7 +90,7 @@ local mon = {
     last_event_ms = 0,
     drop_seen   = 0,          -- last dropped_total we reported on (fault gate)
     gap_seen    = 0,          -- last seq_gaps we reported on
-    win = { faults = 0, events = 0, drop_base = 0, gap_base = 0 },
+    win = { faults = 0, events = 0, drop_base = 0, gap_base = 0, hold0 = {} },
     st  = {},                 -- per-action state, keyed by action name
 }
 
@@ -197,6 +195,7 @@ local function mon_window_begin()
     mon.win.drop_base = s.dropped_total
     mon.win.gap_base  = s.seq_gaps
     for _, name in ipairs(ACTIONS) do
+        mon.win.hold0[name] = Input_hold_ms(name)
         local a = mon.st[name]
         a.w_p, a.w_r, a.w_x, a.w_max_hold = 0, 0, 0, 0
         a.w_rep_n, a.w_rep_dt_sum = 0, 0
@@ -228,7 +227,7 @@ local function mon_tick()
     end
     if s.seq_gaps > mon.gap_seen then
         fault("-", "seq-gap",
-              fmt("seq_gaps %d->%d (event lost on back->head IPC path)",
+              fmt("seq_gaps %d->%d (event lost before reaching the engine)",
                   mon.gap_seen, s.seq_gaps))
         mon.gap_seen = s.seq_gaps
     end
@@ -364,14 +363,17 @@ reg_cap("idle", "Release all -> idle clean",
                 if Input_just_pressed(name) or Input_just_released(name) then
                     return false, fmt("%s edge flag stuck high", name)
                 end
-                if Input_hold_ms(name) ~= 0 then
-                    return false, fmt("%s hold_ms=%d (expected 0)", name, Input_hold_ms(name))
+                -- hold_ms keeps the last event's value (0 after PRESS, the
+                -- release hold after RELEASE); with no events it must not move.
+                if Input_hold_ms(name) ~= mon.win.hold0[name] then
+                    return false, fmt("%s hold_ms %d -> %d with no event", name,
+                                      mon.win.hold0[name], Input_hold_ms(name))
                 end
             end
             if d.events > 0 then
                 return false, fmt("%d events during idle window", d.events)
             end
-            return true, "idle neutral: down/edges/hold all clear"
+            return true, "idle neutral: down/edges clear, hold_ms stable"
         end)
 
 -- ── Group D: Hold / auto-repeat (capture) ────────────────────────────
@@ -405,7 +407,7 @@ reg_cap("hold", "Repeat cadence (hold ENTER 3s)",
             local note = (avg >= REP_DT_LO and avg <= REP_DT_HI) and "in-band"
                          or fmt("OUT of [%d,%d]", REP_DT_LO, REP_DT_HI)
             -- Cadence active is the pass gate; exact dt is reported (it is
-            -- back-timed over IPC, so it is OTD-confirmed, not hard-gated).
+            -- timed outside the engine, so it is reported, not hard-gated).
             return true, fmt("reps=%d dt avg=%d min=%d max=%dms (~%dms nominal, %s)",
                              a.w_x, avg, lo, a.w_rep_dt_max, REPEAT_RATE_MS, note)
         end)
@@ -438,10 +440,10 @@ reg_cap("stress", "Mash ENTER fast (5s)",
                 return false, fmt("only %d presses in %ds - mash harder", a.w_p, floor(secs))
             end
             if d.dropped > 0 then
-                return false, fmt("dropped=%d (SPSC ring overflow!)", d.dropped)
+                return false, fmt("dropped=%d (input ring overflow!)", d.dropped)
             end
             if d.gaps > 0 then
-                return false, fmt("seq_gaps=%d (events lost on IPC path)", d.gaps)
+                return false, fmt("seq_gaps=%d (events lost before reaching the engine)", d.gaps)
             end
             if a.w_p ~= a.w_r then
                 return false, fmt("unbalanced after mash p=%d r=%d", a.w_p, a.w_r)
@@ -502,23 +504,23 @@ reg_sync("diag", "monitor dump + DIAG hints", function()
     end
 
     if mon.events == 0 then
-        print("button DIAG: events=0 -> on_input never fired (game session "
-              .. "inactive? back not forwarding GAME_INPUT? STATE_GAME gate? "
-              .. "engine_level<6 or manifest input.actions missing?)")
+        print("button DIAG: events=0 -> on_input never fired (no action bound "
+              .. "to the buttons in manifest input.actions, or button events do "
+              .. "not reach the engine)")
     end
     if s.dropped_total > 0 then
-        print("button DIAG: dropped>0 -> head SPSC ring (" .. RING_SZ
-              .. " slots) overflowed faster than engine_task drained "
-              .. "(frame stall, or flood exceeded ring depth).")
+        print("button DIAG: dropped>0 -> the engine's input queue (" .. RING_SZ
+              .. " events) overflowed between two frames (a long frame, or a "
+              .. "flood deeper than the queue); on_input_lost reports it too.")
     end
     if s.seq_gaps > 0 then
         print("button DIAG: seq_gaps>0 -> event sequence skipped (lost on the "
-              .. "back->head IPC/forward path before reaching the ring).")
+              .. "way from the buttons to the engine's input ring).")
     end
     if mon.fault_count > 0 then
         print("button DIAG: faults>0 -> protocol invariant broken; the FAULT "
               .. "lines name the action + kind (double-press/orphan-release/"
-              .. "poll-mismatch/edge-* = pump or back edge-logic bug).")
+              .. "poll-mismatch/edge-* = an engine input bug worth reporting).")
     end
 
     return true, fmt("events=%d faults=%d drop=%d gaps=%d (see DIAG/faults above)",
@@ -528,7 +530,7 @@ end)
 -- ── Group H: Session ─────────────────────────────────────────────────
 reg_sync("session", "Engine.exit", function()
     Engine.exit("button_done")
-    return true, "exit posted; session ends, input reset on back"
+    return true, "exit posted; the session ends"
 end)
 
 -- ── Runner state ─────────────────────────────────────────────────────
@@ -810,9 +812,7 @@ end
 
 -- ── Lua engine hooks ─────────────────────────────────────────────────
 function game_start()
-    local ev = (Engine and Engine.version and Engine.version()) or "?"
-    print(fmt("button: game_start engine=%s tests=%d",
-              tostring(ev), N_TESTS))
+    print(fmt("button: game_start tests=%d", N_TESTS))
     local A = Input_actions()
     print("button: actions = " .. concat(A, ","))
     -- Baseline the drop/gap watermark so pre-existing counters from earlier

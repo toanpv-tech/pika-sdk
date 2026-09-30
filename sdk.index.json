@@ -1,40 +1,50 @@
 {
   "schema": "pika-sdk/1",
-  "sdk_version": "1.1.1",
+  "sdk_version": "2.0.0",
   "name": "Pika SDK",
-  "description": "Kho thông tin hỗ trợ cho Pika Studio: assets, docs, thư viện Lua và game mẫu. Repo độc lập, addon vào tool qua git URL (pika.sdk.source).",
-  "engine_api": {
-    "min": "1.1.1",
-    "note": "Version hợp đồng API mà SDK này viết theo. Tool so với version firmware báo lúc chạy và cảnh báo (mềm) nếu lệch."
-  },
+  "description": "Official toolkit for building PIKA robot games without the robot: engine contract generated from the firmware, browser demo kit, AI skill, docs, Lua libraries, examples and gate tools. Pika Studio loads it through the pika.sdk.source setting. The only proof that it matches a firmware build is tools/gen_contract.py --firmware <checkout> --check.",
   "sections": {
-    "assets": {
-      "path": "assets",
-      "index": "assets/assets.index.json",
-      "kind": "asset-library",
-      "description": "Pack sprite/audio (Kenney) phân theo 2D/3D/Audio/Pixel/Textures/UI.",
-      "tools": {
-        "unzip": "assets/unzip_assets.sh",
-        "gen_index": "assets/gen_assets_index.sh"
-      }
+    "contract": {
+      "path": "contract",
+      "index": "contract/api.json",
+      "kind": "engine-contract",
+      "description": "api.json (every Lua name, generated), constraints.json (every limit, derived value and fact, generated), semantics.json (behaviour of every call and hook, known issues, PC-vs-robot gaps; hand-written) and pages/ (reference page templates). tools/gen_contract.py renders docs/reference/ and skill/api-contract.md + skill/constraints.md from them."
+    },
+    "kit": {
+      "path": "kit",
+      "index": "kit/template/index.html",
+      "kind": "demo-kit",
+      "description": "Browser robot frame (pika-frame.js): the engine's hooks, API names and limits, live lints, pika-spec.json export. Start from kit/template/."
+    },
+    "skill": {
+      "path": "skill",
+      "index": "skill/skill.index.json",
+      "kind": "ai-skill",
+      "description": "Knowledge pack for AI coding assistants: routing, rules, recipes and templates to design a demo, write Lua, or port a demo to Lua. Entry: skill/SKILL.md."
     },
     "docs": {
       "path": "docs",
       "index": "docs/docs.index.json",
       "kind": "documentation",
-      "description": "Tham chiếu API engine + hướng dẫn bắt đầu."
+      "description": "Docs for people by kind: start/, guides/ (one reader + one goal), concepts/, reference/ (pipeline; generated API, manifest, telemetry, known issues), templates/ (brief, prompts, guide skeleton)."
     },
     "libraries": {
       "path": "libraries",
       "index": "libraries/libs.index.json",
       "kind": "lua-library",
-      "description": "Thư viện Lua chuẩn (bản gốc). Công cụ tạo game copy từ đây vào game/libs."
+      "description": "Standard Lua modules. Pika Studio copies them into <game>/libs/."
     },
     "examples": {
       "path": "examples",
       "index": "examples/examples.index.json",
       "kind": "game-pack",
-      "description": "Game mẫu chạy được, mỗi cái minh hoạ một mảng của engine."
+      "description": "Runnable game packs, each showing one part of the engine; pick_word pairs the kit template with its Lua port."
+    },
+    "tools": {
+      "path": "tools",
+      "index": "tools/package.json",
+      "kind": "tooling",
+      "description": "gen_contract.py (contract and reference pages from the firmware), check_docs.py (docs vs contract, links, anchors, indexes, recipes), smoke.py (lint + run a Lua pack in real Lua 5.5 against a stub built from the contract), playtest.js (headless demo run), check_spec.py (demo hand-off gate), png2rgb565.py (PNG to .rgb565 images and frame strips). Python deps: tools/requirements.txt; Node deps: tools/package.json."
     }
   }
 }

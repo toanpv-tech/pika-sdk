@@ -1,0 +1,11 @@
+{
+  "name": "pika-sdk-tools",
+  "private": true,
+  "description": "Headless playtest for Pika demos built on kit/pika-frame.js.",
+  "scripts": {
+    "playtest": "node playtest.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

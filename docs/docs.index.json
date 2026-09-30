@@ -1,14 +1,343 @@
 {
-  "schema": "pika-sdk-docs/1",
-  "entry": "getting-started.md",
+  "schema": "pika-sdk-docs/2",
+  "note": "File paths are relative to docs/. type: start | guide | concept | reference | template | index. Pika Studio reads entry and docs[].file/title/summary. stages: pipeline IDs (reference/pipeline.md). needs: docs to finish first. produces/gate: the output and how it is proven. generated: rendered by tools/gen_contract.py, never edit by hand.",
+  "entry": "start/getting-started.md",
   "docs": [
-    { "file": "getting-started.md", "title": "Bắt đầu nhanh", "summary": "Cài tool → mở game mẫu → Run → sửa → Export. Đọc đầu tiên." },
-    { "file": "overview.md", "title": "Tổng quan", "summary": "Bức tranh engine cho đội làm game: ngoại vi, hai luồng chơi (Offline / A2A), ràng buộc tài nguyên." },
-    { "file": "guide.md",    "title": "Hướng dẫn viết Game Pack", "summary": "Từng bước dựng một game pack Lua: manifest, main script, vòng đời & hook, sandbox." },
-    { "file": "manifest.md", "title": "manifest.json — Schema v2", "summary": "Schema manifest đầy đủ: name/main/peripherals, input map, audio, servo." },
-    { "file": "api.md",      "title": "Tham chiếu API Lua", "summary": "Toàn bộ binding: Engine, Timer, Text, Input, Sprite, Anim, Speaker, Servo, Led, Voice, Ranking." },
-    { "file": "module.md",   "title": "Module Firmware", "summary": "Các module engine phía firmware (tham khảo, không cần cho người viết game)." },
-    { "file": "monitor.md",  "title": "Monitor — Log vòng đời", "summary": "Log theo pha vòng đời game (game.start/running/stop/error/warn) để chẩn đoán trên board." },
-    { "file": "README.md",   "title": "Mục lục tài liệu", "summary": "Điểm vào, liên kết tới các tài liệu còn lại." }
+    {
+      "file": "start/getting-started.md",
+      "title": "Getting started",
+      "summary": "Install the tools, prove they work with one command, and see the same game as a browser demo and as a Lua pack. Read first.",
+      "type": "start",
+      "audience": [
+        "everyone"
+      ],
+      "order": 1,
+      "stages": [
+        "S0"
+      ],
+      "produces": [
+        "working tools"
+      ],
+      "gate": "python tools/smoke.py examples/pick_word -> 0 error(s), 0 warning(s)"
+    },
+    {
+      "file": "start/faq.md",
+      "title": "FAQ",
+      "summary": "Short answers to the questions developers ask first (tools, Lua sandbox, timing, buttons, graphics, sound, voice, saving, packaging, debugging), each linking to the page that owns the fact.",
+      "type": "start",
+      "audience": [
+        "everyone"
+      ],
+      "order": 2
+    },
+    {
+      "file": "guides/vibe-coding.md",
+      "title": "Vibe-code a game",
+      "summary": "One person and an AI assistant through every stage: what to ask, what to check yourself, and the signs the AI has drifted.",
+      "type": "guide",
+      "audience": [
+        "solo-creator"
+      ],
+      "order": 2,
+      "stages": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ],
+      "needs": [
+        "start/getting-started.md"
+      ],
+      "produces": [
+        "a finished, published game"
+      ],
+      "gate": "release checklist ticked"
+    },
+    {
+      "file": "guides/team-workflow.md",
+      "title": "Team workflow",
+      "summary": "Who owns each stage, what is handed over to whom, and the rules that keep hand-offs clean.",
+      "type": "guide",
+      "audience": [
+        "designer",
+        "artist",
+        "developer",
+        "qa"
+      ],
+      "order": 3,
+      "stages": [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ],
+      "needs": [
+        "start/getting-started.md"
+      ],
+      "produces": [
+        "a game on the robot with one owner per stage"
+      ],
+      "gate": "release checklist ticked"
+    },
+    {
+      "file": "guides/design-a-demo.md",
+      "title": "Design a demo",
+      "summary": "Build a browser demo on the robot kit, from the template to the demo gate and the hand-off.",
+      "type": "guide",
+      "audience": [
+        "designer",
+        "developer",
+        "ai"
+      ],
+      "order": 4,
+      "stages": [
+        "S3"
+      ],
+      "needs": [
+        "start/getting-started.md"
+      ],
+      "produces": [
+        "demo folder",
+        "pika-spec.json",
+        "To record list"
+      ],
+      "gate": "check_spec.py -> Verdict: READY TO PORT"
+    },
+    {
+      "file": "guides/write-a-game-pack.md",
+      "title": "Write a game pack",
+      "summary": "Start a Lua pack from a template and the nine habits that make it run on the robot the first time.",
+      "type": "guide",
+      "audience": [
+        "developer",
+        "ai"
+      ],
+      "order": 5,
+      "stages": [
+        "S4",
+        "S5"
+      ],
+      "needs": [
+        "start/getting-started.md"
+      ],
+      "produces": [
+        "Lua pack"
+      ],
+      "gate": "smoke.py <pack> -> 0 error(s)"
+    },
+    {
+      "file": "guides/port-a-demo.md",
+      "title": "Port a demo",
+      "summary": "What a person checks when a kit demo becomes a Lua pack, and how to port a demo not built on the kit.",
+      "type": "guide",
+      "audience": [
+        "developer",
+        "ai"
+      ],
+      "order": 6,
+      "stages": [
+        "S4",
+        "S5",
+        "S6"
+      ],
+      "needs": [
+        "guides/design-a-demo.md"
+      ],
+      "produces": [
+        "Lua pack"
+      ],
+      "gate": "smoke.py <pack> -> 0 error(s)"
+    },
+    {
+      "file": "guides/prepare-assets.md",
+      "title": "Prepare assets",
+      "summary": "Formats, sizes, memory, frame strips, fonts and audio rules for art and sound the pack loads as they are.",
+      "type": "guide",
+      "audience": [
+        "artist",
+        "audio"
+      ],
+      "order": 7,
+      "stages": [
+        "S7"
+      ],
+      "produces": [
+        "final images, fonts and recordings"
+      ],
+      "gate": "hand-off checklist ticked; smoke.py still 0 error(s)"
+    },
+    {
+      "file": "guides/release-checklist.md",
+      "title": "Release checklist",
+      "summary": "Checks before publishing and the telemetry gates that only a robot run can pass.",
+      "type": "guide",
+      "audience": [
+        "qa"
+      ],
+      "order": 8,
+      "stages": [
+        "S8",
+        "S9"
+      ],
+      "needs": [
+        "guides/write-a-game-pack.md"
+      ],
+      "produces": [
+        "ticked checklist"
+      ],
+      "gate": "every item ticked"
+    },
+    {
+      "file": "concepts/overview.md",
+      "title": "Overview",
+      "summary": "The robot, the engine model (hooks, retained graphics, asynchronous peripherals, hard limits), menu vs talk flow.",
+      "type": "concept",
+      "audience": [
+        "everyone"
+      ],
+      "order": 9
+    },
+    {
+      "file": "reference/pipeline.md",
+      "title": "Pipeline",
+      "summary": "Stages S0-S9 with owner, input, output and gate, and the exact command and pass string of every gate.",
+      "type": "reference",
+      "audience": [
+        "everyone",
+        "ai"
+      ],
+      "order": 10,
+      "stages": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ]
+    },
+    {
+      "file": "reference/api.md",
+      "title": "Lua API",
+      "summary": "Every global, function, method, constant and hook, with its behaviour on bad input and on failure, plus limits. Generated.",
+      "type": "reference",
+      "audience": [
+        "developer",
+        "ai"
+      ],
+      "order": 11,
+      "generated": true
+    },
+    {
+      "file": "reference/manifest.md",
+      "title": "manifest.json",
+      "summary": "The pack folder, icon.png and every manifest field the firmware reads, its limits and the reasons a pack is rejected. Generated.",
+      "type": "reference",
+      "audience": [
+        "developer",
+        "ai"
+      ],
+      "order": 12,
+      "generated": true
+    },
+    {
+      "file": "reference/telemetry.md",
+      "title": "Telemetry",
+      "summary": "The engine's serial log lines (game.start/running/warn/error/stalled/stop), their fields, and diagnosis heuristics. Generated.",
+      "type": "reference",
+      "audience": [
+        "developer",
+        "qa",
+        "ai"
+      ],
+      "order": 13,
+      "stages": [
+        "S9"
+      ],
+      "generated": true
+    },
+    {
+      "file": "reference/known-issues.md",
+      "title": "Known issues",
+      "summary": "Firmware behaviour to work around (KI-*) and where the PC tools differ from the robot (PC-*). Generated.",
+      "type": "reference",
+      "audience": [
+        "developer",
+        "qa",
+        "ai"
+      ],
+      "order": 14,
+      "generated": true
+    },
+    {
+      "file": "templates/brief-template.md",
+      "title": "Brief template",
+      "summary": "Fill-in brief: pitch, players, learning goals, controls, rules, screens, robot features, look, limits.",
+      "type": "template",
+      "audience": [
+        "designer"
+      ],
+      "order": 15,
+      "stages": [
+        "S1"
+      ],
+      "produces": [
+        "a filled brief"
+      ]
+    },
+    {
+      "file": "templates/prompts.md",
+      "title": "Prompts",
+      "summary": "Copy-paste prompts: start from a brief, report a bug, port a demo, review a robot run.",
+      "type": "template",
+      "audience": [
+        "everyone"
+      ],
+      "order": 16,
+      "stages": [
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S9"
+      ]
+    },
+    {
+      "file": "templates/_guide-template.md",
+      "title": "Guide template",
+      "summary": "Skeleton for a new guide: one reader, one goal, Do / Check / Done when per step.",
+      "type": "template",
+      "audience": [
+        "maintainer"
+      ],
+      "order": 17
+    },
+    {
+      "file": "README.md",
+      "title": "Documentation index",
+      "summary": "Find a page by who you are and what you want, or by kind.",
+      "type": "index",
+      "audience": [
+        "everyone"
+      ],
+      "order": 18
+    }
   ]
 }

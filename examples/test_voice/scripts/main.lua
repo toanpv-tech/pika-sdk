@@ -1,21 +1,29 @@
 -- voice_probe: minimal pack for verifying the game-voice binding end-to-end.
 --
--- Model: keyword spotting (NOT conversation/STT). The game ships an English
--- keyword list; the child speaks a short command; the backend matches a
--- pre-loaded keyword and returns VOICE_COMMAND{data.keyword}. See
--- VoiceRefactor/Binding.md.
+-- Model: keyword spotting (NOT conversation/STT). The game sends an English
+-- keyword list; the child speaks a short command; the voice server matches it
+-- and the robot delivers VOICE_COMMAND{data.keyword}. Reference:
+-- docs/reference/api.md#voice in the Pika SDK.
+--
+-- Voice rules this probe follows (the robot enforces them):
+--   * Voice.set_keywords sends the list AND starts listening; Voice.start is
+--     not needed. Every session here starts from on_input, i.e. after
+--     game_start returned: keywords sent from game_start are dropped.
+--   * A second set_keywords while a session is active is refused with an
+--     error/busy event and the old list stays. Swap = Voice.stop, then
+--     set_keywords again.
 --
 -- Modes (LEFT/RIGHT cycles; ENTER fires the active mode):
---   LISTEN  : set_keywords + start. Spoken commands land as e.data.keyword and
---             count into the HUD. e.data.status=="unavailable" hides voice UI
---             but the mode keeps running. ENTER toggles the session.
---   ERRORS  : Local error-model probe — NO network. Asserts the P1 binding
---             guards row by row (raise-on-misuse + (nil,reason)-on-runtime), so
---             this mode is the after-flash sanity check.
---   LATENCY : Server round-trip probe. Stamps connect RTT (Voice.start ->
---             first ack we can observe) and the time to the FIRST VOICE_COMMAND
---             after ENTER. The operator must speak a keyword to fill the
---             command milestone; connect RTT lands speech-free.
+--   LISTEN  : set_keywords opens the session. Spoken commands land as
+--             e.data.keyword and count into the HUD. e.data.status==
+--             "unavailable" hides voice UI but the mode keeps running. ENTER
+--             toggles the session.
+--   ERRORS  : Local error-model probe, no network. Asserts the binding guards
+--             row by row (raise-on-misuse + (nil,reason)-on-runtime), so this
+--             mode is the after-flash sanity check.
+--   LATENCY : Server round-trip probe. Stamps the time from set_keywords to the
+--             FIRST VOICE_COMMAND after ENTER. The operator must speak a
+--             keyword to fill it.
 --   RESULT  : A2A game_result probe. ENTER cycles a report value (win/lose/quit);
 --             it calls Engine.report_result{event=...} then Engine.exit(). In an
 --             A2A talk-flow game the backend uplinks game_result{event} and the
@@ -26,18 +34,17 @@
 -- defensive raw-string fallback keeps the game alive if the engine ever falls
 -- back (parse fail / depth-cap hit).
 
--- Keywords this probe listens for. English-only (backend is a zh-en model);
--- Vietnamese / out-of-vocab phrases are rejected server-side and never trigger.
+-- Keywords this probe listens for. English only: other languages and
+-- out-of-vocabulary phrases never trigger.
 local KEYWORDS    = { "go left", "go right", "jump", "stop" }
 local SENSITIVITY = 5
 
 -- ── Localize hot upvalues ─────────────────────────────────────────────
 local Voice_set_keywords = Voice.set_keywords
-local Voice_start        = Voice.start
 local Voice_stop         = Voice.stop
 local Voice_is_available = Voice.is_available
 local Engine_report      = Engine.report_result
--- Talk-flow mode, latched from game_start(params).is_a2a (Voice.mode() is gone).
+-- Talk-flow mode, latched from game_start(params).is_a2a.
 local is_a2a             = false
 local Engine_exit        = Engine.exit
 -- One Text label, created lazily (Text.new needs the game screen).
@@ -50,14 +57,13 @@ local fmt, concat        = string.format, table.concat
 local rep                = string.rep
 local pcall, ipairs, type, tostring = pcall, ipairs, type, tostring
 
-local clock_ms = (Engine and Engine.now_ms) or (Timer and Timer.millis)
-                 or function() return 0 end
+local clock_ms = Timer.millis
 
 -- ── Mode state (small, kept module-local) ─────────────────────────────
 local MAX_CMD_RING = 6
 
 local listen = {
-    started     = false,   -- true between Voice.start and Voice.stop
+    started     = false,   -- true between set_keywords and Voice.stop / a session error
     available   = true,    -- flipped false on status=="unavailable"
     last_err    = nil,
     commands    = 0,
@@ -69,7 +75,7 @@ local errors = {
     ran     = false,
 }
 
--- LATENCY: connect RTT + time-to-first-command, both measured from Voice.start.
+-- LATENCY: time-to-first-command, measured from set_keywords.
 local latency = {
     started    = false,
     t0         = 0,
@@ -86,10 +92,12 @@ local result = {
 }
 
 -- ── P1 error-model probe builders ─────────────────────────────────────
--- VOICE_MAX_KEYWORDS = 16 in bind_voice.c. Build 20 to be safely past.
+-- The engine refuses more than voice_keywords_max keywords
+-- (contract/constraints.json). Build one past the cap.
+local KEYWORDS_MAX = 64
 local function build_too_many_keywords()
     local t = {}
-    for i = 1, 20 do t[i] = "kw" .. i end
+    for i = 1, KEYWORDS_MAX + 1 do t[i] = "kw" .. i end
     return t
 end
 
@@ -98,11 +106,12 @@ local function build_not_array()
     return { go_left = true, jump = true }
 end
 
--- JSON_MAX = 1024B (incl. NUL). A handful of long keywords blows past while
--- staying under the 16-count cap so payload_too_big is what trips.
+-- The encoded list is capped at voice_start_json_max_bytes (2048, incl. NUL).
+-- A dozen long keywords blow past it while staying under the keyword cap, so
+-- payload_too_big is what trips.
 local function build_payload_too_big()
     local t = {}
-    for i = 1, 8 do t[i] = rep("X", 200) end
+    for i = 1, 12 do t[i] = rep("X", 200) end
     return t
 end
 
@@ -186,17 +195,6 @@ local error_tests = {
             return true, "is_available=" .. tostring(v)
         end,
     },
-    {
-        -- Voice.mode() was removed from the engine; params.is_a2a (latched in
-        -- game_start) is the single source of truth for talk-flow mode.
-        name = "Voice.mode() is gone",
-        run = function()
-            if Voice.mode ~= nil then
-                return false, "Voice.mode still present type=" .. type(Voice.mode)
-            end
-            return true, "mode=" .. (is_a2a and "a2a" or "offline") .. " (params.is_a2a)"
-        end,
-    },
 }
 
 local function run_error_tests()
@@ -229,9 +227,8 @@ end
 local hud_dirty = true
 local function dirty() hud_dirty = true end
 
--- Load vocabulary then open the session. set_keywords must precede start so the
--- server vocabulary is non-empty (an empty START while idle is rejected with
--- no_keywords by back).
+-- set_keywords sends the vocabulary and opens the session in one call. `true`
+-- only means the request was queued: a refusal arrives as an error event.
 local function listen_start()
     listen.last_err  = nil
     listen.available = true
@@ -241,13 +238,7 @@ local function listen_start()
         print("voice_probe LISTEN set_keywords failed: " .. tostring(reason))
         return false
     end
-    ok, reason = Voice_start()
-    if ok == nil then
-        listen.last_err = reason or "start_failed"
-        print("voice_probe LISTEN start failed: " .. tostring(reason))
-        return false
-    end
-    print("voice_probe LISTEN start ok")
+    print("voice_probe LISTEN set_keywords ok (session opening)")
     return true
 end
 
@@ -289,14 +280,8 @@ local function latency_toggle()
         print("voice_probe LATENCY set_keywords failed: " .. tostring(reason))
         return
     end
-    ok, reason = Voice_start()
-    if ok == nil then
-        latency.last_err = reason or "start_failed"
-        print("voice_probe LATENCY start failed: " .. tostring(reason))
-    else
-        latency.started = true
-        print("voice_probe LATENCY start ok (speak a keyword)")
-    end
+    latency.started = true
+    print("voice_probe LATENCY set_keywords ok (speak a keyword)")
 end
 
 -- RESULT: report the currently-selected event, then exit. In an A2A game the
@@ -349,18 +334,21 @@ function on_voice_event(e)
     local t = e.type
     local mode_name = MODES[cursor].name
 
-    -- Engine-synth error frames (back {type:"error",code,message}) — terminal.
+    -- Robot-generated error frames {type="error", code, message}. `busy` means
+    -- a session is already active and keeps its old list; every other code
+    -- means no session is listening. connect_failed, connect_timeout,
+    -- ws_disconnected and ws_error also end the game (the robot does it).
     if t == "error" then
         if mode_name == "LISTEN" then listen.last_err = e.code or "?"
         elseif mode_name == "LATENCY" then latency.last_err = e.code or "?" end
-        clear_started(mode_name)
+        if e.code ~= "busy" then clear_started(mode_name) end
         print(fmt("voice_probe %s ERROR code=%s msg=%s",
                   mode_name, tostring(e.code), tostring(e.message)))
         dirty()
         return
     end
 
-    -- Server VOICE_COMMAND — two branches per BE contract:
+    -- Server VOICE_COMMAND, two branches:
     --   data.keyword           -> a recognised command
     --   data.status=="unavail" -> keyword spotting down; hide voice UI, keep
     --                             playing (backend never closes the session).
@@ -370,7 +358,10 @@ function on_voice_event(e)
             push_command(data.keyword)
             if mode_name == "LATENCY" and latency.started and not latency.dt_first then
                 latency_record_first(clock_ms() - latency.t0)
-                latency.started = false   -- one-shot per ENTER
+                -- One-shot per ENTER: close the session so the next ENTER can
+                -- open a fresh one (set_keywords while active would be busy).
+                Voice_stop()
+                latency.started = false
             end
             print(fmt("voice_probe CMD: %s", tostring(data.keyword)))
         elseif type(data) == "table" and data.status == "unavailable" then
@@ -503,7 +494,8 @@ end
 
 -- ── Engine hooks ──────────────────────────────────────────────────────
 -- params is always a table (engine decodes the JSON body; empty on failure).
--- is_a2a / language are added host-side by the engine.
+-- is_a2a / language are added by the engine. Voice.is_available() is false
+-- here by design (the game is marked running after game_start returns).
 function game_start(params)
     is_a2a = (type(params) == "table") and params.is_a2a == true
     print(fmt("voice_probe game_start lang=%s available=%s mode=%s",

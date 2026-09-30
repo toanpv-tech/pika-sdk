@@ -1,7 +1,9 @@
 {
-  "version": "0.3.0",
-  "name": "Audio Stress Test",
+  "name": {"vi": "Kiểm tra âm thanh", "en": "Audio Stress Test"},
+  "version": "0.3.1",
+  "author": "Pika SDK",
   "main": "scripts/main.lua",
+  "peripherals": ["display", "button", "audio"],
   "input": {
     "actions": {
       "fire": ["button:enter"],
@@ -11,24 +13,18 @@
   },
   "audio": {
     "sounds": {
-      "sfx":       { "path": "assets/audio/output.wav" },
-      "clip":      { "path": "assets/audio/en_home.mp3" },
-      "long":      { "path": "assets/audio/en_greeting.mp3" },
-      "loopclip":  { "path": "assets/audio/en_home.mp3", "loop": true },
-
-      "home":      { "path": "assets/audio/en_home.mp3" },
-      "greeting":  { "path": "assets/audio/en_greeting.mp3" },
-      "glitch":    { "path": "assets/audio/en_glitch.mp3" },
-      "glitch2":   { "path": "assets/audio/en_glitch_again.mp3" },
-      "let_learn": { "path": "assets/audio/en_let_learn.mp3" },
-      "lost_wifi": { "path": "assets/audio/lost_wifi_signal.mp3" },
-      "sleep":     { "path": "assets/audio/prepare_to_sleep.mp3" },
-      "error":     { "path": "assets/audio/en_error.mp3" }
-    },
-    "volume": 70
-  },
-  "assets": {
-    "sprites": [],
-    "audio": []
+      "sfx":       {"path": "assets/audio/output.wav"},
+      "clip":      {"path": "assets/audio/en_home.mp3"},
+      "long":      {"path": "assets/audio/en_greeting.mp3"},
+      "loopclip":  {"path": "assets/audio/en_home.mp3", "loop": true},
+      "home":      {"path": "assets/audio/en_home.mp3"},
+      "greeting":  {"path": "assets/audio/en_greeting.mp3"},
+      "glitch":    {"path": "assets/audio/en_glitch.mp3"},
+      "glitch2":   {"path": "assets/audio/en_glitch_again.mp3"},
+      "let_learn": {"path": "assets/audio/en_let_learn.mp3"},
+      "lost_wifi": {"path": "assets/audio/lost_wifi_signal.mp3"},
+      "sleep":     {"path": "assets/audio/prepare_to_sleep.mp3"},
+      "error":     {"path": "assets/audio/en_error.mp3"}
+    }
   }
 }

@@ -1,41 +1,41 @@
--- Minimal Pika game — chạy được ngay, dùng làm điểm xuất phát.
+-- Minimal Pika game: runs as is, use it as a starting point.
 --
--- Cấu trúc: game = tập hàm global engine tự gọi (hook). KHÔNG có game loop
--- của bạn; on_tick là frame (~30 FPS). Chỉ dùng API trong ../../api-contract.md.
+-- A game is a set of global hook functions that the engine calls. There is no
+-- game loop of your own: on_tick is the frame (30 FPS). Only call names listed
+-- in contract/api.json (see skill/api-contract.md).
 
--- ── Trạng thái game (upvalue module) ─────────────────────────────────
-local player          -- sprite; tạo TRỄ ở on_tick đầu (tránh 'unsafe path')
+-- Game state (module locals) -------------------------------------------------
+local player          -- Sprite handle
 local hud             -- Text handle
 local score = 0
-local SPEED = 3       -- px/frame
+local SPEED = 3       -- px per frame
+local SIZE = 24       -- player width/height in px
 
--- ── game_start(params): 1 lần khi vào game ──────────────────────────
--- params LUÔN là table (engine decode JSON; rỗng nếu không có/hỏng). Engine tự
--- thêm params.is_a2a (bool) và params.language (mã ISO 639-1).
--- Text.new tạo được ở đây. Sprite/Anim thì KHÔNG (xem pitfalls #1) — tạo trễ.
+-- game_start(params): once, after the pack has loaded -------------------------
+-- params is always a table (empty if the launcher sent nothing). The engine
+-- adds params.is_a2a (bool) and params.language (ISO 639-1 code).
+-- Keep this hook short: it shares the 1.5 s hook watchdog.
 function game_start(params)
-  hud = Text.new("Score: 0", 4, 4)   -- nhớ: pool Text tối đa 8
+  hud = Text.new("Score: 0", 8, 8)            -- nil, "pool_full" past 8 labels
+  player = Sprite.solid(SIZE, SIZE, 0x07E0)    -- green block (RGB565 colour)
+  if player then player:set_pos(228, 180) end  -- sprites stay hidden until placed
 end
 
--- ── on_tick(dt_ms): mỗi frame ────────────────────────────────────────
+-- on_tick(dt_ms): every frame ------------------------------------------------
+-- dt_ms is the nominal frame time; use Timer.millis() to measure real time.
 function on_tick(dt_ms)
-  -- Tạo sprite ở frame đầu tiên (an toàn path), rồi return.
-  if not player then
-    player = Sprite.solid(24, 24, 0x07E0)   -- khối xanh 24x24 (màu RGB565)
-    if player then player:set_pos(140, 180) end  -- set_pos NGAY để không nháy (0,0)
-    return
-  end
+  if not player then return end
 
-  -- Poll nút cho chuyển động mượt.
+  -- Poll the buttons for smooth movement.
   local x, y = player:get_pos()
   if Input.is_down("left")  then x = x - SPEED end
   if Input.is_down("right") then x = x + SPEED end
-  if x < 0 then x = 0 elseif x > 296 then x = 296 end   -- kẹp trong màn (320 - 24)
-  player:set_pos(x, y)
+  if x < 0 then x = 0 elseif x > 480 - SIZE then x = 480 - SIZE end
+  player:set_pos(x, y)                         -- integers only
 end
 
--- ── on_input(action, phase, hold_ms): sự kiện nút rời rạc ─────────────
--- Dùng cho hành động 1-lần (chọn, bắn), không phải chuyển động liên tục.
+-- on_input(action, phase, hold_ms): discrete button events -------------------
+-- Use it for one-off actions (select, shoot), not continuous movement.
 function on_input(action, phase, hold_ms)
   if action == "enter" and phase == Input.PRESS then
     score = score + 1
@@ -43,12 +43,15 @@ function on_input(action, phase, hold_ms)
   end
 end
 
--- ── on_home(): nút HOME — thoát game ─────────────────────────────────
+-- on_home(): HOME button -----------------------------------------------------
+-- Return true to keep the game running (e.g. to show a confirm prompt);
+-- returning anything else ends the game.
 function on_home()
-  Engine.exit("home")
+  return false
 end
 
--- ── game_end(): dọn dẹp trước khi thoát (tuỳ chọn) ───────────────────
+-- game_end(): before teardown ------------------------------------------------
 function game_end()
-  -- Sprite/Text tự huỷ khi game thoát; chỉ dọn thủ công nếu cần sớm.
+  -- Sprites and Text are freed by the engine; release things early here only
+  -- if you need to (e.g. Speaker.stop_all()).
 end
