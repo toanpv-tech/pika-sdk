@@ -8,7 +8,7 @@
       "path": "contract",
       "index": "contract/api.json",
       "kind": "engine-contract",
-      "description": "api.json (every Lua name, generated), constraints.json (every limit, derived value and fact, generated), semantics.json (behaviour of every call and hook, known issues, PC-vs-robot gaps; hand-written) and pages/ (reference page templates). tools/gen_contract.py renders docs/reference/ and skill/api-contract.md + skill/constraints.md from them."
+      "description": "api.json (every Lua name, generated), constraints.json (every limit, derived value and fact, generated), semantics.json (behaviour of every call and hook, known issues, PC-vs-robot gaps; hand-written) and pages/ (reference page templates). tools/gen_contract.py renders docs/reference/ and knowledge/api-contract.md + knowledge/constraints.md from them."
     },
     "kit": {
       "path": "kit",
@@ -16,11 +16,11 @@
       "kind": "demo-kit",
       "description": "Browser robot frame (pika-frame.js): the engine's hooks, API names and limits, live lints, pika-spec.json export. Start from kit/template/."
     },
-    "skill": {
-      "path": "skill",
-      "index": "skill/skill.index.json",
+    "knowledge": {
+      "path": "knowledge",
+      "index": "knowledge/skill.index.json",
       "kind": "ai-skill",
-      "description": "Knowledge pack for AI coding assistants: routing, rules, recipes and templates to design a demo, write Lua, or port a demo to Lua. Entry: skill/SKILL.md."
+      "description": "Knowledge pack for AI coding assistants: routing, rules and recipes to design a demo, write Lua, or port a demo to Lua. Entry: knowledge/SKILL.md."
     },
     "docs": {
       "path": "docs",
@@ -34,17 +34,23 @@
       "kind": "lua-library",
       "description": "Standard Lua modules. Pika Studio copies them into <game>/libs/."
     },
+    "starters": {
+      "path": "starters",
+      "index": "knowledge/skill.index.json",
+      "kind": "game-template",
+      "description": "Runnable game skeletons to copy into games/<id>/: minimal-game (one file) and structured-game (scenes, rules split from wiring). Listed under templates in knowledge/skill.index.json."
+    },
     "examples": {
-      "path": "examples",
-      "index": "examples/examples.index.json",
+      "path": "test-packs",
+      "index": "test-packs/examples.index.json",
       "kind": "game-pack",
-      "description": "Runnable game packs, each showing one part of the engine; pick_word pairs the kit template with its Lua port."
+      "description": "Single-feature robot test packs, one per public Lua global (test_<global>), all running on libs/testkit."
     },
     "tools": {
       "path": "tools",
       "index": "tools/package.json",
       "kind": "tooling",
-      "description": "gen_contract.py (contract and reference pages from the firmware), check_docs.py (docs vs contract, links, anchors, indexes, recipes), smoke.py (lint + run a Lua pack in real Lua 5.5 against a stub built from the contract), playtest.js (headless demo run), check_spec.py (demo hand-off gate), png2rgb565.py (PNG to .rgb565 images and frame strips). Python deps: tools/requirements.txt; Node deps: tools/package.json."
+      "description": "gen_contract.py (contract and reference pages from the firmware), check_docs.py (docs vs contract, links, anchors, indexes, recipes), smoke.py (lint + run a Lua pack in real Lua 5.5 against a stub built from the contract), playtest.js (headless demo run), check_spec.py (demo hand-off gate), png2rgb565.py (PNG to .rgb565 images and frame strips), gen_tel_vectors.py (test-packs/test_telemetry/libs/tel_vectors.lua from contract/telemetry_vectors.json). Python deps: tools/requirements.txt; Node deps: tools/package.json."
     }
   }
 }

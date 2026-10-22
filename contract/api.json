@@ -22,6 +22,7 @@
    "functions": [
     "exit",
     "report_result",
+    "show",
     "stack_hwm"
    ],
    "methods": [],
@@ -47,6 +48,13 @@
     "set_font",
     "show"
    ],
+   "constants": []
+  },
+  "Pack": {
+   "functions": [
+    "data"
+   ],
+   "methods": [],
    "constants": []
   },
   "Shape": {
@@ -165,6 +173,14 @@
    ],
    "constants": []
   },
+  "Telemetry": {
+   "functions": [
+    "caps",
+    "event"
+   ],
+   "methods": [],
+   "constants": []
+  },
   "Voice": {
    "functions": [
     "is_available",
@@ -183,6 +199,7 @@
   "on_input",
   "on_input_lost",
   "on_pack_cmd",
+  "on_pack_data",
   "on_sound_end",
   "on_sound_lost",
   "on_tick",
@@ -190,6 +207,8 @@
  ],
  "internal": {
   "on_pack_cmd": "host command channel of built-in packs",
+  "on_pack_data": "pack data store channel of built-in packs",
+  "Pack.data": "pack data store channel of built-in packs",
   "Engine.stack_hwm": "firmware stack sizing probe"
  },
  "a2a_only": {

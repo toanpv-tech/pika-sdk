@@ -36,10 +36,10 @@ One or two sentences: why someone would follow this guide and what it does not c
 
 ## When something goes wrong
 
-Symptom first; each item links to the entry that explains it (skill/pitfalls.md, a
+Symptom first; each item links to the entry that explains it (knowledge/pitfalls.md, a
 reference page, or a known issue).
 
-- **[What the reader sees]** — [one line] ([details](../../skill/pitfalls.md))
+- **[What the reader sees]** — [one line] ([details](../../knowledge/pitfalls.md))
 
 ## See also
 

@@ -12,7 +12,8 @@
 --   HOST.api, HOST.lim, HOST.manifest   decoded JSON tables
 --   HOST.file_size(rel) -> bytes | nil  HOST.png_size(rel) -> w, h, has_alpha | nil
 --   HOST.sound_ms(rel) -> ms            HOST.read(rel) -> text | nil
---   HOST.anim_ms(rel) -> ms | nil       one pass of a GIF (nil: unknown, never ends)
+--   HOST.anim_ms(rel) -> ms | nil       one pass of a GIF or MJPEG (nil: unknown, never ends)
+--   HOST.anim_ok(rel) -> bool           the file opens as its codec (GIF / JPEG header)
 --   HOST.report(kind, code, msg)        kind: "error" | "warn" | "info"
 
 local H = HOST
@@ -68,9 +69,24 @@ local function safe_rel(p)
   return #p < LIM.sandbox_path_max
 end
 
+-- luaL_checkstring: a number is converted, anything else raises.
+local function str_arg(v, fname, i)
+  if type(v) == "number" then return tostring(v) end
+  if type(v) ~= "string" then error(("bad argument #%d to '%s' (string expected, got %s)"):format(i, fname, type(v)), 3) end
+  return v
+end
+
 local function check_path(p, fname)
-  if type(p) ~= "string" then error(("bad argument #1 to '%s' (string expected)"):format(fname), 3) end
+  p = str_arg(p, fname, 1)
   if not safe_rel(p) then error(("unsafe path: %s"):format(p), 3) end
+  return p
+end
+
+-- lua_isnumber: a number or a numeric string.
+local function num_of(v)
+  if type(v) == "number" then return v end
+  if type(v) == "string" then return tonumber(v) end
+  return nil
 end
 
 -- ------------------------------------------------------------------ closed tables
@@ -100,33 +116,49 @@ local function closed(gname, impl, methods_of)
   })
 end
 
-local function method_table(gname, impl, on_gc)
+-- close: the engine registers __close (Text, Shape), so a <close> local destroys it.
+local function method_table(gname, impl, on_gc, close)
   local known = {}
   for _, n in ipairs((API.globals[gname] or {}).methods or {}) do known[n] = true end
+  local meta = {}
+  local tname = "pika." .. gname:lower()
   local mt = {}
   for n in pairs(known) do
-    mt[n] = impl[n] or function() warn_once("NOT-SIMULATED", gname .. ":" .. n .. " is real but not simulated by smoke") end
+    local f = impl[n]
+    if f then
+      -- luaL_checkudata: every method raises when self is not this kind of handle.
+      mt[n] = function(o, ...)
+        if getmetatable(o) ~= meta then
+          error(("bad argument #1 to '%s' (%s expected, got %s)"):format(n, tname, type(o)), 2)
+        end
+        return f(o, ...)
+      end
+    else
+      mt[n] = function() warn_once("NOT-SIMULATED", gname .. ":" .. n .. " is real but not simulated by smoke") end
+    end
   end
   for n in pairs(impl) do
     if not known[n] then error("stub bug: " .. gname .. ":" .. n .. " is not in contract/api.json") end
   end
-  return {
-    __index = function(_, k)
-      local f = mt[k]
-      if f then return f end
-      warn_once("MISSING-API", ("%s object has no field '%s': reads nil on the robot"):format(gname, tostring(k)))
-      return nil
-    end,
-    __name = "pika." .. gname:lower(),
-    -- On the robot an unreferenced handle is collected and its object freed.
-    __gc = function(o)
-      local r = D[o]
-      if not r or not r.alive or r.sid ~= SID then return end
-      warn_once("HANDLE-GC", ("%s created at %s was garbage-collected while alive: on the robot it disappears; keep a reference (or destroy it)")
-        :format(gname, r.site or "?"))
-      if on_gc then on_gc(o) end
-    end,
-  }
+  meta.__index = function(_, k)
+    local f = mt[k]
+    if f then return f end
+    warn_once("MISSING-API", ("%s object has no field '%s': reads nil on the robot"):format(gname, tostring(k)))
+    return nil
+  end
+  meta.__name = tname
+  -- On the robot an unreferenced handle is collected and its object freed.
+  meta.__gc = function(o)
+    local r = D[o]
+    if not r or not r.alive or r.sid ~= SID then return end
+    warn_once("HANDLE-GC", ("%s created at %s was garbage-collected while alive: on the robot it disappears; keep a reference (or destroy it)")
+      :format(gname, r.site or "?"))
+    if on_gc then on_gc(o) end
+  end
+  if close then
+    meta.__close = function(o) local r = D[o]; if r and r.alive and on_gc then on_gc(o) end end
+  end
+  return meta
 end
 
 -- ------------------------------------------------------------------ Sprite
@@ -163,21 +195,28 @@ local function xform(o, what)
   return true
 end
 
+-- A destroyed sprite has a NULL renderer handle: getters read 0, 0 and every
+-- call that returns a boolean returns false (lvgl_renderer.c).
 SPR_MT = method_table("Sprite", {
   set_pos = function(o, x, y)
     x, y = int_arg(x, "set_pos", 1), int_arg(y, "set_pos", 2)
     if live(o) then D[o].x, D[o].y, D[o].pending = x, y, false end
   end,
-  get_pos = function(o) return D[o].x, D[o].y end,
-  get_size = function(o) return D[o].w, D[o].h end,
+  get_pos = function(o) if not live(o) then return 0, 0 end; return D[o].x, D[o].y end,
+  get_size = function(o) if not live(o) then return 0, 0 end; return D[o].w, D[o].h end,
   set_visible = function(o) if live(o) then D[o].pending = false end end,
   set_frame = function(o, path, idx)
-    check_path(path, "set_frame")
+    path = check_path(path, "set_frame")
     idx = int_arg(idx, "set_frame", 2)
+    if not live(o) then return false end
     S.frame_calls = S.frame_calls + 1
     local r = D[o]
     if path:match("%.[pP][nN][gG]$") then
       report("error", "FRAME-FMT", "set_frame reads raw frames, never a PNG: " .. path)
+      return false
+    end
+    if r.bytes ~= r.w * r.h * 2 then
+      report("error", "FRAME-FMT", "set_frame on " .. r.path .. ", a PNG sprite with alpha: strips are RGB565 only")
       return false
     end
     local size = H.file_size(path)
@@ -193,10 +232,24 @@ SPR_MT = method_table("Sprite", {
     r.sh, r.sv = false, false
     return true
   end,
-  set_scale = function(o) return xform(o, "set_scale") end,
-  set_rotation = function(o) return xform(o, "set_rotation") end,
-  set_pivot = function() return true end,
+  set_scale = function(o, v)
+    int_arg(v, "set_scale", 1)
+    if not live(o) then return false end
+    return xform(o, "set_scale")
+  end,
+  set_rotation = function(o, v)
+    int_arg(v, "set_rotation", 1)
+    if not live(o) then return false end
+    return xform(o, "set_rotation")
+  end,
+  -- Bounded like Shape coordinates; out of range returns false (bind_sprite.c).
+  set_pivot = function(o, x, y)
+    x, y = int_arg(x, "set_pivot", 1), int_arg(y, "set_pivot", 2)
+    if x < -LIM.img_max_w or x > 2 * LIM.img_max_w or y < -LIM.img_max_h or y > 2 * LIM.img_max_h then return false end
+    return live(o)
+  end,
   set_flip = function(o, h, v)
+    if not live(o) then return false end
     S.frame_calls = S.frame_calls + 1
     local r = D[o]
     h, v = not not h, not not v
@@ -211,29 +264,47 @@ SPR_MT = method_table("Sprite", {
     r.fh, r.fv = h, v
     return true
   end,
-  set_opacity = function() end, set_z = function() end, to_front = function() end, to_back = function() end,
-  hit_test = function(o, qx, qy) return qx >= D[o].x and qx < D[o].x + D[o].w and qy >= D[o].y and qy < D[o].y + D[o].h end,
-  intersects = function(o, b) return D[o].x < D[b].x + D[b].w and D[b].x < D[o].x + D[o].w and D[o].y < D[b].y + D[b].h and D[b].y < D[o].y + D[o].h end,
+  set_opacity = function(_, v)
+    if num_of(v) == nil then error("bad argument #1 to 'set_opacity' (number expected, got " .. type(v) .. ")", 3) end
+  end,
+  set_z = function(_, z) int_arg(z, "set_z", 1) end,
+  to_front = function() end, to_back = function() end,
+  hit_test = function(o, qx, qy)
+    qx, qy = int_arg(qx, "hit_test", 1), int_arg(qy, "hit_test", 2)
+    local x, y = SPR_MT.__index(o, "get_pos")(o)
+    local w, h = SPR_MT.__index(o, "get_size")(o)
+    return qx >= x and qx < x + w and qy >= y and qy < y + h
+  end,
+  intersects = function(o, b)
+    if getmetatable(b) ~= SPR_MT then error("bad argument #1 to 'intersects' (pika.sprite expected, got " .. type(b) .. ")", 3) end
+    local ax, ay = SPR_MT.__index(o, "get_pos")(o)
+    local aw, ah = SPR_MT.__index(o, "get_size")(o)
+    local bx, by = SPR_MT.__index(b, "get_pos")(b)
+    local bw, bh = SPR_MT.__index(b, "get_size")(b)
+    return not (ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay)
+  end,
   destroy = function(o) if D[o].alive then sprite_free(o) end end,
 }, sprite_free)
 
 local Sprite = closed("Sprite", {
   image = function(path)
-    check_path(path, "Sprite.image")
+    path = check_path(path, "Sprite.image")
     local w, h, alpha = H.png_size(path)
-    if not w then return nil, "load failed: " .. path end
+    if not w then return nil, "image load failed: " .. path end
     -- Same rule as asset_loader.c png_has_alpha: RGB565A8 when the PNG can carry alpha.
     return new_sprite(path, w, h, alpha and 3 or 2)
   end,
   new = function(path, w, h)
-    check_path(path, "Sprite.new")
+    path = check_path(path, "Sprite.new")
     w, h = int_arg(w, "Sprite.new", 2), int_arg(h, "Sprite.new", 3)
+    if w <= 0 or h <= 0 then return nil, "load failed: " .. path end   -- asset_loader.c: INVALID_ARG
     local size = H.file_size(path)
     if not size or size < w * h * 2 then return nil, "load failed: " .. path end
     return new_sprite(path, w, h, 2)
   end,
-  solid = function(w, h)
+  solid = function(w, h, rgb)
     w, h = int_arg(w, "Sprite.solid", 1), int_arg(h, "Sprite.solid", 2)
+    int_arg(rgb, "Sprite.solid", 3)
     if w <= 0 or h <= 0 or w > LIM.img_max_w or h > LIM.img_max_h then error("Sprite.solid: size out of range", 2) end
     return new_sprite("solid", w, h, 2)
   end,
@@ -247,16 +318,25 @@ end
 local function text_free(t)
   D[t].alive = false; face_release(t); S.texts[D[t].slot] = nil; S.text_n = S.text_n - 1
 end
+-- Arg types are strict (luaL_check*); on a destroyed label set/move/set_color/show
+-- are no-ops and align/set_font return nil, msg (bind_engine.c).
 TXT_MT = method_table("Text", {
-  set = function(t, s) if type(s) ~= "string" and type(s) ~= "number" then error("bad argument #1 to 'set'", 2) end; D[t].str = tostring(s) end,
+  set = function(t, s) s = str_arg(s, "set", 1); if D[t].alive then D[t].str = s end end,
   move = function(t, x, y) int_arg(x, "move", 1); int_arg(y, "move", 2) end,
-  align = function(t, where)
+  align = function(t, where, dx, dy)
+    where = str_arg(where, "align", 1)
+    if dx ~= nil then int_arg(dx, "align", 2) end
+    if dy ~= nil then int_arg(dy, "align", 3) end
     local ok = { center = 1, top = 1, bottom = 1, left = 1, right = 1, top_left = 1, top_right = 1, bottom_left = 1, bottom_right = 1 }
-    if not ok[where] then return nil, "bad align: " .. tostring(where) end
+    if not ok[where] then return nil, "unknown Text align: " .. where end
+    if not D[t].alive then return nil, "stale_text" end
   end,
   set_font = function(t, path, size)
-    if not safe_rel(path) then return nil, "unsafe font path: " .. tostring(path) end
+    path = str_arg(path, "set_font", 1)
+    if size ~= nil then size = int_arg(size, "set_font", 2) end
+    if not safe_rel(path) then return nil, "unsafe font path: " .. path end
     size = size or LIM.font_px_default
+    if not D[t].alive then return nil, "set_font failed (" .. path .. "): stale label" end
     if not H.file_size(path) then return nil, "set_font failed (" .. path .. "): not found" end
     local key = path .. "@" .. size
     if not S.faces[key] then
@@ -274,11 +354,13 @@ TXT_MT = method_table("Text", {
     local n = 0; for _ in pairs(S.faces) do n = n + 1 end
     if n > S.peak.fonts then S.peak.fonts = n end
   end,
-  set_color = function() end, show = function() end,
+  set_color = function(_, rgb) int_arg(rgb, "set_color", 1) end,
+  show = function() end,
   destroy = function(t) if D[t].alive then text_free(t) end end,
-}, text_free)
+}, text_free, true)
 local Text = closed("Text", {
   new = function(str, x, y)
+    str = str_arg(str, "Text.new", 1)
     int_arg(x, "Text.new", 2); int_arg(y, "Text.new", 3)
     for slot = 1, LIM.text_slots do
       if not S.texts[slot] then
@@ -296,17 +378,105 @@ local Text = closed("Text", {
 })
 
 -- ------------------------------------------------------------------ Shape, Anim
-local function shape_free(s) D[s].alive = false; S.shapes = S.shapes - 1 end
+-- Shape: bind_engine.c (arg checks) + lvgl_renderer.c line_rebuild (bbox, budget).
+local LINE_PAD, LINE_BPP = 4, 3
+
+local function shape_coord(v, fname, i, panel)
+  v = int_arg(v, fname, i)
+  if v < -panel or v > 2 * panel then error(("bad argument #%d to '%s' (coordinate out of range)"):format(i, fname), 4) end
+  return v
+end
+
+local function shape_points(fname, base, x1, y1, x2, y2)
+  return shape_coord(x1, fname, base, LIM.img_max_w), shape_coord(y1, fname, base + 1, LIM.img_max_h),
+         shape_coord(x2, fname, base + 2, LIM.img_max_w), shape_coord(y2, fname, base + 3, LIM.img_max_h)
+end
+
+-- A malformed field raises; width is clamped. Omitted fields take the defaults.
+local function shape_style(st, fname, i)
+  local s = { width = 2, color = 0xFFFFFF, dash_on = 0, dash_off = 0, cap = "butt" }
+  if st == nil then return s end
+  if type(st) ~= "table" then error(("bad argument #%d to '%s' (table expected, got %s)"):format(i, fname, type(st)), 3) end
+  if st.width ~= nil then
+    local w = int_arg(st.width, fname, i)
+    s.width = math.max(1, math.min(LIM.line_width_max, w))
+  end
+  if st.color ~= nil then s.color = int_arg(st.color, fname, i) end
+  if st.dash ~= nil then
+    local d = st.dash
+    if type(d) ~= "table" then error(("bad argument #%d to '%s' (dash must be a table {on, off})"):format(i, fname), 3) end
+    if rawlen(d) ~= 2 then error(("bad argument #%d to '%s' (dash must hold exactly two numbers {on, off})"):format(i, fname), 3) end
+    local on, off = int_arg(rawget(d, 1), fname, i), int_arg(rawget(d, 2), fname, i)
+    if on < 0 or on > LIM.img_max_w or off < 0 or off > LIM.img_max_w then
+      error(("bad argument #%d to '%s' (dash value out of range)"):format(i, fname), 3)
+    end
+    s.dash_on, s.dash_off = on, off
+  end
+  if st.cap ~= nil then
+    local c = str_arg(st.cap, fname, i)
+    if c ~= "butt" and c ~= "round" then
+      error(("bad argument #%d to '%s' (cap must be \"butt\" or \"round\")"):format(i, fname), 3)
+    end
+    s.cap = c
+  end
+  return s
+end
+
+-- Raster bytes of a line, or nil, reason when it cannot be built.
+local function shape_bytes(r, x1, y1, x2, y2, width)
+  local pad = LINE_PAD + (width + 1) // 2
+  local w = math.abs(x2 - x1) + 2 * pad
+  local h = math.abs(y2 - y1) + 2 * pad
+  if w > LIM.img_max_w or h > LIM.img_max_h then return nil, "bbox_too_large" end
+  local want = w * h * LINE_BPP
+  if S.line_bytes - (r and r.bytes or 0) + want > LIM.line_pool_max_bytes then return nil, "no_mem" end
+  return want
+end
+
+local function shape_free(s)
+  local r = D[s]
+  r.alive = false; S.shapes = S.shapes - 1; S.line_bytes = S.line_bytes - r.bytes
+end
+
 local SHP_MT = method_table("Shape", {
-  set_points = function() return 0 end, set_style = function() return 0 end,
-  set_opacity = function() end, set_z = function() end, set_visible = function() end,
+  set_points = function(s, x1, y1, x2, y2)
+    x1, y1, x2, y2 = shape_points("set_points", 1, x1, y1, x2, y2)
+    local r = D[s]
+    if not r.alive then return end
+    local bytes, why = shape_bytes(r, x1, y1, x2, y2, r.style.width)
+    if not bytes then return nil, why end
+    S.line_bytes = S.line_bytes - r.bytes + bytes
+    r.bytes, r.pts = bytes, { x1, y1, x2, y2 }
+  end,
+  set_style = function(s, st)
+    if st == nil then error("bad argument #1 to 'set_style' (table expected, got nil)", 3) end
+    st = shape_style(st, "set_style", 1)
+    local r = D[s]
+    if not r.alive then return end
+    local p = r.pts
+    local bytes, why = shape_bytes(r, p[1], p[2], p[3], p[4], st.width)
+    if not bytes then return nil, why end
+    S.line_bytes = S.line_bytes - r.bytes + bytes
+    r.bytes, r.style = bytes, st
+  end,
+  set_opacity = function(_, v) int_arg(v, "set_opacity", 1) end,
+  set_z = function(_, z) int_arg(z, "set_z", 1) end,
+  set_visible = function() end,
   destroy = function(s) if D[s].alive then shape_free(s) end end,
-}, shape_free)
+}, shape_free, true)
+
 local Shape = closed("Shape", {
-  line = function()
+  line = function(x1, y1, x2, y2, st)
+    x1, y1, x2, y2 = shape_points("Shape.line", 1, x1, y1, x2, y2)
+    st = shape_style(st, "Shape.line", 5)
     if S.shapes >= LIM.line_slots then return nil, "pool_full" end
+    local bytes, why = shape_bytes(nil, x1, y1, x2, y2, st.width)
+    if not bytes then return nil, why end
     S.shapes = S.shapes + 1
-    local o = setmetatable({}, SHP_MT); D[o] = { alive = true, sid = SID, site = site() }; return o
+    S.line_bytes = S.line_bytes + bytes
+    local o = setmetatable({}, SHP_MT)
+    D[o] = { alive = true, sid = SID, site = site(), bytes = bytes, pts = { x1, y1, x2, y2 }, style = st }
+    return o
   end,
 })
 
@@ -327,7 +497,10 @@ local ANM_MT = method_table("Anim", {
     if not r.alive then return false end
     if S.anim and S.anim ~= r then anim_stop(S.anim) end
     if r.ended then r.pos = 0 end
-    if type(opt) == "table" then r.loop = not not opt.loop else r.loop = not not opt end
+    -- Only a boolean or {loop = ...} is read: play(1) is a one-shot (bind_anim.c).
+    if type(opt) == "table" then r.loop = not not opt.loop
+    elseif type(opt) == "boolean" then r.loop = opt
+    else r.loop = false end
     r.ended, r.playing = false, true
     S.anim = r
     return true
@@ -339,18 +512,26 @@ local ANM_MT = method_table("Anim", {
     if S.anim and S.anim ~= r then anim_stop(S.anim) end
     r.playing = true; S.anim = r
   end,
-  stop = function(a) anim_stop(D[a]) end,
-  is_playing = function(a) return D[a].playing end,
-  set_pos = function() end, set_visible = function() end,
+  stop = function(a) if D[a].alive then anim_stop(D[a]) end end,
+  is_playing = function(a) return D[a].alive and D[a].playing end,
+  set_pos = function(_, x, y) int_arg(x, "set_pos", 1); int_arg(y, "set_pos", 2) end,
+  set_visible = function() end,
   destroy = function(a) if D[a].alive then anim_free(a) end end,
 }, anim_free)
 local Anim = closed("Anim", {
   new = function(path)
-    check_path(path, "Anim.new")
-    if not path:lower():match("%.gif$") and not path:lower():match("%.mjpe?g$") then error("Anim.new: unsupported extension " .. path, 2) end
+    -- Extension first, then the sandbox path; both raise (bind_anim.c).
+    path = str_arg(path, "Anim.new", 1)
+    local lower = path:lower()
+    if not lower:match("%.gif$") and not lower:match("%.mjpeg$") and not lower:match("%.mjpg$") then
+      error("unknown anim type (want .gif/.mjpeg): " .. path, 2)
+    end
+    if not safe_rel(path) then error("unsafe anim path: " .. path, 2) end
     local size = H.file_size(path)
-    if not size then return nil, "load failed: " .. path end
-    if size > LIM.anim_max_file_bytes then return nil, "too_big" end
+    if not size then return nil, "anim load failed: " .. path end
+    if size > LIM.anim_max_file_bytes then return nil, "anim load failed: " .. path end
+    -- The codec opens the file: a .gif that is not a GIF fails here (anim.c).
+    if not H.anim_ok(path) then return nil, "anim load failed: " .. path end
     local o = setmetatable({}, ANM_MT)
     D[o] = { path = path, alive = true, playing = false, ended = false, loop = false, pos = 0,
              dur = H.anim_ms(path), sid = SID, site = site() }
@@ -371,9 +552,11 @@ local Speaker = closed("Speaker", {
     end
     if S.now - S.last_play < LIM.sound_cooldown_ms then
       report("warn", "COOLDOWN", ("Speaker.play('%s') at %d ms refused: inside %d ms cooldown"):format(alias, S.now, LIM.sound_cooldown_ms))
+      S.snd.cooldown = S.snd.cooldown + 1
       return false
     end
     S.last_play = S.now
+    S.snd.played = S.snd.played + 1
     if S.cur then S.events[#S.events + 1] = { "sound_end", S.cur.alias, 2 } end
     S.cur = { alias = alias, len = def.path and H.sound_ms(def.path) or 1000, loop = def.loop == true }
     S.cur.ends = S.now + S.cur.len
@@ -392,7 +575,13 @@ local Speaker = closed("Speaker", {
   end,
   is_playing = function(alias) return S.cur ~= nil and S.cur.alias == alias end,
   is_busy = function() return S.cur ~= nil end,
-  set_volume = function() end, get_volume = function() return 80 end,
+  -- Clamped 0..100 and rounded; a non-number is a no-op (bind_speaker.c).
+  set_volume = function(v)
+    local n = num_of(v)
+    if n == nil then return end
+    S.volume = n >= 100 and 100 or (n <= 0 and 0 or math.floor(n + 0.5))
+  end,
+  get_volume = function() return S.volume end,
   set_url = function(alias, url)
     local def = sounds[alias]
     if not def or not (def.remote == true or type(def.url) == "string") then return false end
@@ -403,12 +592,21 @@ local Speaker = closed("Speaker", {
     S.urls[alias] = url
     return true
   end,
-  stats = function() return { played_total = 0, finish_dropped = 0, error_count = 0, cooldown_reject = 0 } end,
+  -- Nothing is decoded on the PC: error, drop, hookup and abandon counters stay 0.
+  stats = function()
+    return { played_total = S.snd.played, finish_dropped = 0, error_count = 0, cooldown_reject = S.snd.cooldown,
+             no_hookup = 0, speaker_abandoned_current = 0, speaker_abandoned_peak = 0 }
+  end,
 })
 
 -- ------------------------------------------------------------------ Input
 local actions, by_button = {}, {}
-for name, srcs in pairs((MAN.input or {}).actions or {}) do
+local man_actions = (MAN.input or {}).actions
+if type(man_actions) ~= "table" then
+  -- Same defaults as the engine (input.c seed_defaults).
+  man_actions = { confirm = { "button:enter" }, left = { "button:left" }, right = { "button:right" } }
+end
+for name, srcs in pairs(man_actions) do
   actions[name] = true
   for _, s in ipairs(srcs) do by_button[s] = by_button[s] or name end
 end
@@ -430,31 +628,133 @@ local Input = closed("Input", {
 })
 
 -- ------------------------------------------------------------------ the rest
-local function range(v, lo, hi) return type(v) == "number" and v >= lo and v <= hi end
+-- Led: bind_led.c + led_pump.c. Bad arguments return false, never raise.
+-- Commands queue in an 8-slot ring drained after every frame; a set() merges
+-- into a set() still waiting in the ring.
+local LED_RING = 8
+local function led_push(op)
+  local L = S.led
+  L.pushed = L.pushed + 1
+  if op == "rgb" and L.rgb_pos then L.coalesced = L.coalesced + 1; return true end
+  if #L.q >= LED_RING then L.dropped = L.dropped + 1; return false end
+  L.q[#L.q + 1] = op
+  if op == "rgb" then L.rgb_pos = #L.q end
+  return true
+end
+local function led_nums(...)
+  for i = 1, select("#", ...) do if num_of((select(i, ...))) == nil then return false end end
+  return true
+end
+local LED_PRESETS = { user_talk = 1, conv_processing = 1, robot_talking = 1, warm_white = 1, light_blue = 1, dark_blue = 1 }
 local Led = closed("Led", {
-  set = function() return true end, off = function() return true end,
+  set = function(r, g, b) if not led_nums(r, g, b) then return false end; return led_push("rgb") end,
+  off = function() return led_push("off") end,
   preset = function(n)
-    local ok = { user_talk = 1, conv_processing = 1, robot_talking = 1, warm_white = 1, light_blue = 1, dark_blue = 1 }
-    if not ok[n] then warn_once("LED", "Led.preset('" .. tostring(n) .. "'): unknown preset"); return false end
+    if type(n) ~= "string" or not LED_PRESETS[n] then warn_once("LED", "Led.preset('" .. tostring(n) .. "'): unknown preset"); return false end
+    return led_push("preset")
+  end,
+  blink = function(r, g, b, p)
+    if not led_nums(r, g, b, p) then return false end
+    p = num_of(p)
+    if p < LIM.led_blink_min_ms or p > LIM.led_blink_max_ms then report("error", "LED", "Led.blink period " .. tostring(p) .. " ms rejected"); return false end
+    return led_push("blink")
+  end,
+  pulse = function(r, g, b, d)
+    if not led_nums(r, g, b, d) then return false end
+    d = num_of(d)
+    if d < LIM.led_pulse_min_ms or d > LIM.led_pulse_max_ms then report("error", "LED", "Led.pulse duration " .. tostring(d) .. " ms rejected"); return false end
+    return led_push("pulse")
+  end,
+  -- 0..100, rejected outside (not clamped), rounded; the mirror moves only on a queued push.
+  set_brightness = function(p)
+    local n = num_of(p)
+    if n == nil or n ~= n or n < 0 or n > 100 then return false end
+    if not led_push("bright") then return false end
+    S.led.bright = math.floor(n + 0.5)
     return true
   end,
-  blink = function(_, _, _, p)
-    if not range(p, LIM.led_blink_min_ms, LIM.led_blink_max_ms) then report("error", "LED", "Led.blink period " .. tostring(p) .. " ms rejected"); return false end
-    return true
+  get_brightness = function() return S.led.bright end,
+  is_available = function() return S.phase == "run" end,
+  stats = function()
+    local L = S.led
+    return { pushed_total = L.pushed, coalesced_total = L.coalesced, dropped_total = L.dropped,
+             sent_total = L.sent, send_fail_total = 0, brightness_pct = L.bright }
   end,
-  pulse = function(_, _, _, d)
-    if not range(d, LIM.led_pulse_min_ms, LIM.led_pulse_max_ms) then report("error", "LED", "Led.pulse duration " .. tostring(d) .. " ms rejected"); return false end
-    return true
-  end,
-  set_brightness = function(p) return range(p, 0, 100) end,
-  get_brightness = function() return 100 end, is_available = function() return true end,
 })
+
+-- Servo: bind_servo.c + servo.c. Bad arguments return false, never raise. A
+-- 32-slot ring drained after every frame; a plain move merges into the move
+-- still waiting for the same joint. is_busy is a prediction stamped at push.
+-- Back-side rejects (duty limit, validation) need the body board: always 0 here.
+local SERVO_RING = 32
+local SERVO_JOINTS = { "head", "base", "left", "right" }
 local servos, poses = MAN.servos or {}, MAN.poses or {}
+local function servo_joint(alias)
+  if type(alias) ~= "string" then return nil end
+  local v = servos[alias]
+  if v == nil then return nil end
+  -- The manifest maps an alias to a joint; "body" drives the base (servo.c).
+  local j = type(v) == "table" and (v.servo or v.joint or v.hw) or v
+  if j == "body" then j = "base" end
+  return j
+end
+local function servo_push(joint, kind, dur)
+  local V = S.servo
+  V.pushed = V.pushed + 1
+  if kind == "move" and V.pending[joint] then
+    V.coalesced = V.coalesced + 1
+    V.busy_until[joint] = S.now + dur
+    return true
+  end
+  if #V.q >= SERVO_RING then V.dropped = V.dropped + 1; return false end
+  V.q[#V.q + 1] = kind
+  if kind == "move" then V.pending[joint] = true end
+  V.busy_until[joint] = S.now + dur
+  return true
+end
+local SERVO_EASING = { linear = true, in_out = true, bounce = true }
 local Servo = closed("Servo", {
-  pose = function(a) if not poses[a] then warn_once("SERVO", "Servo.pose('" .. tostring(a) .. "'): pose not in manifest"); return false end; return true end,
-  move = function(a) if not servos[a] then warn_once("SERVO", "Servo.move('" .. tostring(a) .. "'): servo not in manifest"); return false end; return true end,
-  stop = function() return true end, is_busy = function() return false end,
-  list = function() return { servos = servos, poses = poses } end,
+  pose = function(a)
+    if type(a) ~= "string" or not poses[a] then warn_once("SERVO", "Servo.pose('" .. tostring(a) .. "'): pose not in manifest"); return false end
+    for _, j in ipairs(SERVO_JOINTS) do S.servo.busy_until[j] = S.now + LIM.servo_pose_busy_ms end
+    return servo_push("head", "pose", LIM.servo_pose_busy_ms)
+  end,
+  move = function(a, angle, dur, easing)
+    local j = servo_joint(a)
+    if not j then warn_once("SERVO", "Servo.move('" .. tostring(a) .. "'): servo not in manifest"); return false end
+    if num_of(angle) == nil or num_of(dur) == nil then return false end
+    if easing ~= nil and (type(easing) ~= "string" or not SERVO_EASING[easing]) then return false end
+    local d = num_of(dur)
+    d = d > 65535 and 65535 or (d < 0 and 0 or math.floor(d))
+    return servo_push(j, "move", d)
+  end,
+  stop = function(a)
+    if a == nil then
+      local ok = true
+      for _, j in ipairs(SERVO_JOINTS) do ok = servo_push(j, "stop", 0) and ok end
+      return ok
+    end
+    local j = servo_joint(a)
+    if not j then return false end
+    return servo_push(j, "stop", 0)
+  end,
+  is_busy = function(a)
+    local j = servo_joint(a)
+    return j ~= nil and S.now < (S.servo.busy_until[j] or 0)
+  end,
+  stats = function()
+    local V = S.servo
+    return { pushed_total = V.pushed, coalesced_total = V.coalesced, dropped_total = V.dropped,
+             sent_total = V.sent, send_fail_total = 0, back_reject_throttle = 0, back_reject_validation = 0,
+             back_reject_priority = 0, back_reject_queue_full = 0, last_reject_ms = 0, drain_max_us = 0 }
+  end,
+  -- alias -> joint name and alias -> gesture name, as the engine reports them.
+  list = function()
+    local sv, ps = {}, {}
+    for alias in pairs(servos) do sv[alias] = servo_joint(alias) end
+    for alias, g in pairs(poses) do ps[alias] = type(g) == "table" and (g.gesture or g.pose) or g end
+    return { servos = sv, poses = ps }
+  end,
 })
 -- Voice follows the body board (game_voice.cpp): the session exists only after
 -- game_start returns; set_keywords sends the list and starts listening; a second
@@ -504,14 +804,169 @@ local Voice = closed("Voice", {
   is_available = function() return S.phase == "run" end,
 })
 local Ranking = closed("Ranking", {
-  report = function(t) if type(t) ~= "table" or type(t.score) ~= "number" then return false end; return true end,
+  -- score: a number or a numeric string (bind_ranking.c lua_isnumber).
+  report = function(t) if type(t) ~= "table" or num_of(t.score) == nil then return false end; return true end,
   get_result = function() return nil end,
 })
 local Engine = closed("Engine", {
-  exit = function(reason) S.exit = reason or "lua" end,
-  report_result = function(t) if type(t) ~= "table" or type(t.event) ~= "string" then return nil, "bad_event" end; return true end,
+  exit = function(reason)
+    if reason ~= nil then reason = str_arg(reason, "exit", 1) end
+    S.exit = reason or "lua"
+  end,
+  -- A non-table raises; event is a string (or number) of 1..255 bytes (bind_engine.c).
+  report_result = function(t)
+    if type(t) ~= "table" then error("bad argument #1 to 'report_result' (table expected, got " .. type(t) .. ")", 2) end
+    local ev = t.event
+    if type(ev) == "number" then ev = tostring(ev) end
+    if type(ev) ~= "string" or #ev == 0 or #ev > LIM.report_event_max_len - 1 then return nil, "bad_event" end
+    return true
+  end,
+  -- engine_core.c engine_show_request: hold only before the screen is up, release once.
+  show = function(visible)
+    local V = S.show
+    if visible ~= nil and not visible then
+      if V.entered or V.held then return false end
+      V.held = true
+      return true
+    end
+    if not V.held or V.requested then return false end
+    V.requested = true
+    return true
+  end,
 })
 local Timer = closed("Timer", { millis = function() return S.now end })
+-- Pack data store: no body board on the PC, so nothing is ever published.
+local Pack = closed("Pack", {
+  data = function(key)
+    if type(key) ~= "string" then error("bad argument #1 to 'data' (string expected)", 2) end
+    return nil
+  end,
+})
+
+-- Telemetry.event: the rules of core/game_tel.c, checked against the same
+-- contract/telemetry_vectors.json (tools/check_telemetry.py). No JSON is built;
+-- S.tel.last says what the robot would do: "sent", "held" or the reject reason.
+local TEL_RESERVED = { id = true, trigger = true, t_ms = true, pv = true, ev = true,
+  key = true, level = true, data = true }
+local TEL_LEVELS = { info = true, warn = true, error = true }
+
+local function tel_state()
+  if not S.tel then
+    S.tel = { ts = {}, sent = 0, dropped = 0, pending = 0, opt_unknown = 0, closed = false, last = nil }
+  end
+  return S.tel
+end
+
+local function tel_round(v)   -- C round(): half away from zero
+  if v >= 0 then return math.floor(v + 0.5) end
+  return math.ceil(v - 0.5)
+end
+
+-- First error wins, in the robot's order: name, then opts, then fields.
+local function tel_check(name, fields, opts)
+  if type(name) ~= "string" or #name == 0 or #name > LIM.tel_name_max or not name:match("^[a-z0-9_.]+$")
+     or name:sub(1, 7) == "engine." or name:sub(1, 4) == "sys." then
+    return "name"
+  end
+  local unknown = false
+  if opts ~= nil then
+    if type(opts) ~= "table" then return "opt_value" end
+    for k, v in next, opts do
+      if k == "key" then
+        if type(v) ~= "string" then return "opt_value" end
+        if #v == 0 or #v > LIM.tel_key_max or not v:match("^[a-z0-9_.]+$") or v:sub(1, 1) == "." or v:sub(-1) == "." then
+          return "key"
+        end
+      elseif k == "level" then
+        if type(v) ~= "string" or not TEL_LEVELS[v] then return "opt_value" end
+      else
+        unknown = true
+      end
+    end
+  end
+  if fields ~= nil then
+    if type(fields) ~= "table" then return "bad_type" end
+    local n, bytes, seen = 0, 0, {}
+    for k, v in next, fields do
+      if type(k) ~= "string" then return "field_name" end
+      n = n + 1
+      if n > LIM.tel_fields_max then return "too_many" end
+      if #k == 0 or #k > LIM.tel_field_name_max or not k:match("^[a-z0-9_]+$") or TEL_RESERVED[k] or seen[k] then
+        return "field_name"
+      end
+      seen[k] = true
+      local enc
+      local tv = type(v)
+      if tv == "number" then
+        local iv = v
+        if math.type(v) ~= "integer" then
+          if v ~= v or v == math.huge or v == -math.huge then return "bad_type" end
+          iv = tel_round(v)
+        end
+        if iv < -2147483648 or iv > 2147483647 then return "bad_type" end
+        enc = #tostring(math.tointeger(iv))
+      elseif tv == "boolean" then
+        enc = 1
+      elseif tv == "string" then
+        if #v > LIM.tel_str_max then return "str_long" end
+        enc = #v + 2
+      else
+        return "bad_type"
+      end
+      bytes = bytes + #k + 4 + enc            -- ,"k":<value>
+      if bytes > LIM.tel_fields_max_bytes then return "too_big" end
+    end
+  end
+  return nil, unknown
+end
+
+local function tel_reject(T, name, why)
+  T.last = why
+  if why ~= "closed" then
+    T.dropped = T.dropped + 1
+    warn_once("TELEMETRY", ("Telemetry.event rejected (%s), e.g. ev=%s: returns false on the robot")
+      :format(why, tostring(name)))
+  end
+  return false
+end
+
+local Telemetry = closed("Telemetry", {
+  event = function(name, fields, opts)
+    local T = tel_state()
+    if T.closed then return tel_reject(T, name, "closed") end
+    local why, unknown = tel_check(name, fields, opts)
+    if why then return tel_reject(T, name, why) end
+    local held = S.phase ~= "run"           -- top level and game_start: before game.start
+    if held and T.pending >= LIM.tel_rate_max then return tel_reject(T, name, "pending") end
+    local ts = T.ts
+    -- & 0xffffffff: the robot's clock is a uint32 of milliseconds and wraps.
+    if #ts >= LIM.tel_rate_max and ((S.now - ts[#ts - LIM.tel_rate_max + 1]) & 0xffffffff) < LIM.tel_rate_window_ms then
+      return tel_reject(T, name, "rate")
+    end
+    ts[#ts + 1] = S.now
+    if unknown then
+      T.opt_unknown = T.opt_unknown + 1
+      warn_once("TELEMETRY-OPT", "Telemetry.event opts has a key this engine does not know: ignored, event sent")
+    end
+    if held then T.pending = T.pending + 1; T.last = "held"
+    else T.sent = T.sent + 1; T.last = "sent" end
+    return true
+  end,
+  caps = function()
+    return { rate_max = LIM.tel_rate_max, rate_window_ms = LIM.tel_rate_window_ms,
+      name_max = LIM.tel_name_max, key_max = LIM.tel_key_max, fields_max = LIM.tel_fields_max,
+      field_name_max = LIM.tel_field_name_max, str_max = LIM.tel_str_max,
+      fields_max_bytes = LIM.tel_fields_max_bytes, opts = { key = true, level = true } }
+  end,
+})
+
+-- game.start: held events go out (counted as sent).
+local function tel_started()
+  local T = tel_state()
+  if T.closed then return end
+  T.sent = T.sent + T.pending
+  T.pending = 0
+end
 
 -- ------------------------------------------------------------------ sandbox + require
 local ALLOWED_BASE = { "assert", "error", "ipairs", "next", "pairs", "pcall", "rawequal", "rawget", "rawlen",
@@ -526,6 +981,8 @@ local function make_env()
   env.pika = {}
   env.Sprite, env.Text, env.Shape, env.Anim, env.Speaker, env.Input = Sprite, Text, Shape, Anim, Speaker, Input
   env.Led, env.Servo, env.Voice, env.Ranking, env.Engine, env.Timer = Led, Servo, Voice, Ranking, Engine, Timer
+  env.Pack = Pack
+  env.Telemetry = Telemetry
   env._G = env
   local cache = {}
   env.require = function(name)
@@ -552,7 +1009,11 @@ function M.new_session(entry_src, entry_name)
   SID = SID + 1
   -- Handles are weak here so an unreferenced one can be collected (HANDLE-GC).
   S = { tick = 0, now = 0, sprites = setmetatable({}, { __mode = "k" }), sprite_n = 0, psram = 0, texts = {}, text_n = 0,
-        faces = {}, font_seen = S.font_seen or {}, shapes = 0, anim = nil, cur = nil, last_play = -1000000,
+        faces = {}, font_seen = S.font_seen or {}, shapes = 0, line_bytes = 0, anim = nil, cur = nil, last_play = -1000000,
+        volume = 80, snd = { played = 0, cooldown = 0 },
+        led = { pushed = 0, coalesced = 0, dropped = 0, sent = 0, q = {}, rgb_pos = nil, bright = 100 },
+        servo = { pushed = 0, coalesced = 0, dropped = 0, sent = 0, q = {}, pending = {}, busy_until = {} },
+        show = { held = false, requested = false, entered = false },
         urls = {}, events = {}, down = {}, just = {}, hold = {}, played = S.played or {}, frame_calls = 0, exit = nil,
         phase = "load", voice = "idle", voice_q = {}, bound = {},
         peak = S.peak or { sprites = 0, texts = 0, psram = 0, fonts = 0 } }
@@ -578,14 +1039,25 @@ function M.hook(name, ...)
   else
     f = rawget(S.env, name)
   end
+  -- The robot closes telemetry before game.stop; game_end runs after it.
+  if name == "game_end" then tel_state().closed = true end
   if type(f) ~= "function" then
-    if name == "game_start" then S.phase = "run" end
+    if name == "game_start" then S.phase = "run"; S.show.entered = true; tel_started() end
     return true, nil, false
   end
   local ok, r = xpcall(f, debug.traceback, ...)
-  if name == "game_start" then S.phase = "run" end
+  if name == "game_start" then
+    S.phase = "run"
+    if not S.show.held then S.show.entered = true end
+    -- A raising game_start fails the launch: no game.start, held events dropped.
+    if ok then tel_started() else tel_state().pending = 0; tel_state().closed = true end
+  end
   return ok, r, true
 end
+
+-- Telemetry state for tools/check_telemetry.py (vectors).
+function M.tel() return tel_state() end
+function M.tel_abort() local T = tel_state(); T.pending = 0; T.closed = true end
 
 function M.has(name) return type(rawget(S.env, name)) == "function" end
 function M.state() return S end
@@ -606,6 +1078,7 @@ function M.pop_events()
       -- A loop restarts on completion without REASON_COMPLETED; the restart counts as a play.
       c.ends = S.now + c.len; S.last_play = S.now
       S.played[c.alias] = (S.played[c.alias] or 0) + 1
+      S.snd.played = S.snd.played + 1
     else
       S.events[#S.events + 1] = { "sound_end", c.alias, 0 }; S.cur = nil
     end
@@ -620,6 +1093,11 @@ function M.pop_voice()
 end
 
 function M.advance(ms)
+  -- After the frame the engine sends what the LED and servo rings hold.
+  local L, V = S.led, S.servo
+  L.sent = L.sent + #L.q; L.q = {}; L.rgb_pos = nil
+  V.sent = V.sent + #V.q; V.q = {}; V.pending = {}
+  if S.show.requested then S.show.entered = true end
   S.now = S.now + ms; S.tick = S.tick + 1
   local a = S.anim
   if a and a.playing and a.dur then

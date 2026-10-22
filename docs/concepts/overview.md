@@ -45,7 +45,7 @@ Both use the same pack and API.
 | --- | --- | --- |
 | Started by | the child, from the robot's game menu | the server, during a conversation |
 | `params.is_a2a` | `false` | `true`, plus the server's start parameters |
-| Ends | `Engine.exit()`, or HOME when `on_home` does not keep the game | the same; the conversation then resumes |
+| Ends | `Engine.exit()`, HOME when `on_home` does not keep the game, HOME held, or ON/OFF (the robot then sleeps) | `Engine.exit()`, any HOME press (`on_home` is not called) or ON/OFF; the conversation then resumes or asks to pause |
 | Result | `Ranking.report` goes to the leaderboard | `Engine.report_result` goes to the conversation |
 
 Voice keywords work in both flows for a pack that declares `"voice"`. From the menu the

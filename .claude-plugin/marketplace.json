@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "pika-sdk",
+  "description": "Agents and skills for making games for the PIKA robot with the Pika SDK.",
+  "owner": {
+    "name": "Pika team",
+    "email": "toanpv.tech@stepup.edu.vn"
+  },
+  "plugins": [
+    {
+      "name": "pika-game",
+      "source": "./",
+      "strict": false,
+      "version": "2.0.0",
+      "description": "Make, port, review and test Lua game packs for the PIKA robot's Pika Engine with the Pika SDK.",
+      "keywords": ["pika", "robot", "lua", "game"]
+    },
+    {
+      "name": "pika-sdk-maintainer",
+      "source": "./plugins/pika-sdk-maintainer",
+      "strict": false,
+      "version": "2.0.0",
+      "description": "For the Pika team: keep the Pika SDK in step with the firmware and release it. Works on a pika-sdk checkout next to a firmware checkout.",
+      "keywords": ["pika", "sdk", "maintainer"]
+    }
+  ]
+}

@@ -14,7 +14,7 @@ proven on a robot: [PC vs robot](../reference/known-issues.md#pc-vs-robot).
 
 ### Can I build it with an AI assistant?
 
-Yes. Point the assistant at [skill/SKILL.md](../../skill/SKILL.md) and follow
+Yes. Point the assistant at [knowledge/SKILL.md](../../knowledge/SKILL.md) and follow
 [Vibe-code a game](../guides/vibe-coding.md).
 
 ### What is the fastest way to a first game?
@@ -23,9 +23,12 @@ Open this SDK folder in your AI editor and paste
 [prompt E](../templates/prompts.md#e-quick-first-game): Lua directly from a template,
 placeholder art, buttons only. Then play it in Pika Studio.
 
-In Claude Code, type `/pika-game <your idea>` instead: it agrees a short plan with you, then
-its `pika-game-maker` agent writes the pack under `games/` and runs the smoke check until it
-passes.
+In Claude Code, install the plugin once with
+`/plugin install pika-game --marketplace toanpv-tech/pika-sdk`, then type
+`/pika-game <your idea>` in any folder: it agrees a short plan with you, an agent writes the
+pack under `games/`, a cleaner cleans it and a tester runs the smoke check over every branch.
+`/pika-test games/<id> <serial log>` scores a robot or Pika Studio log against the release
+telemetry gates.
 
 ### Which firmware does this SDK match?
 
@@ -100,7 +103,11 @@ value after release: [Input](../reference/api.md#input). The browser kit does th
 
 A short press calls `on_home()`; return a truthy value to keep the game, for example to show a
 pause screen. Holding HOME for (`home_force_exit_ms` = 1500) always exits:
-[Hooks](../reference/api.md#hooks).
+[Hooks](../reference/api.md#hooks). In a talk-flow game HOME ends the game without calling
+`on_home()`. The ON/OFF button always ends the game, whatever `on_home` returns, and the robot
+goes to sleep; `game_end()` still runs. In a talk-flow game HOME ends the game without calling
+`on_home()`. The ON/OFF button always ends the game, whatever `on_home` returns, and the robot
+goes to sleep; `game_end()` still runs.
 
 ## Graphics
 
@@ -112,7 +119,7 @@ animations. How to choose and convert: [Prepare assets](../guides/prepare-assets
 ### How many sprites and labels can I have?
 
 Sprites are limited only by free image memory; labels are not: there are
-(`text_slots` = 8) Text slots, (`line_slots` = 8) lines and (`font_slots` = 4) fonts.
+(`text_slots` = 8) Text slots, (`line_slots` = 8) lines and (`font_slots` = 8) fonts.
 Reuse labels instead of creating new ones: [Limits](../reference/api.md#limits).
 
 ### A sprite covers my text
@@ -141,8 +148,9 @@ than (`sound_aliases_max` = 64) aliases rejects the whole pack.
 
 ### Some of my sounds do not play or are cut off
 
-There is one sound channel: a new `Speaker.play` stops the current sound, and a play within
-(`sound_cooldown_ms` = 150) of the previous one returns `false`: [Speaker](../reference/api.md#speaker).
+There is one sound channel. A new `Speaker.play` waits until the current sound ends; call
+`Speaker.stop` first to cut it. A play within (`sound_cooldown_ms` = 150) of the previous one returns
+`false`: [Speaker](../reference/api.md#speaker), [KI-SOUND-QUEUE](../reference/known-issues.md#ki-sound-queue).
 
 ### Can I play a sound from the internet?
 
@@ -175,7 +183,8 @@ with `Ranking.report` and read it back with `Ranking.get_result`: [Ranking](../r
 ### Can I make HTTP requests from Lua?
 
 No. The only network features are sounds from a URL ([audio](../reference/manifest.md#audio)),
-the leaderboard ([Ranking](../reference/api.md#ranking)) and, inside a talk-flow session
+the leaderboard ([Ranking](../reference/api.md#ranking)), game events to the server
+([Telemetry](../reference/api.md#telemetry)) and, inside a talk-flow session
 (`params.is_a2a`), `Engine.report_result{event = ...}` ([Engine](../reference/api.md#engine)).
 
 ## Packaging and release
@@ -218,4 +227,4 @@ Yes. Keep drafts, source art and archives out of the pack folder:
 
 Attach a serial monitor and read the `game.error` and `game.stop` lines:
 [Telemetry](../reference/telemetry.md#the-lines). Symptoms with their causes are listed in
-[skill/pitfalls.md](../../skill/pitfalls.md).
+[knowledge/pitfalls.md](../../knowledge/pitfalls.md).

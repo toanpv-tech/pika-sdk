@@ -5,7 +5,7 @@
 You bring the idea, play the game and judge it; the AI writes everything else. This guide
 walks the [pipeline](../reference/pipeline.md) stage by stage and says, for each one, what to
 ask the AI, what to check yourself, and when to move on. The rules the AI follows are in
-`skill/`; the prompts that make it read them are in [prompts](../templates/prompts.md).
+`knowledge/`; the prompts that make it read them are in [prompts](../templates/prompts.md).
 
 The habit that saves the most time: **ask for proof, not for a summary.** "It works" means
 nothing; the pasted output of a tool does.
@@ -15,9 +15,9 @@ nothing; the pasted output of a tool does.
 ### S0. Set up
 
 - **Do:** follow [Getting started](../start/getting-started.md). Open the SDK folder, or your
-  game folder next to it, in the editor where your AI assistant runs, so it can read `skill/`
+  game folder next to it, in the editor where your AI assistant runs, so it can read `knowledge/`
   and `contract/`.
-- **Done when:** the S0 gate passes and `pick_word` plays in Pika Studio.
+- **Done when:** the S0 gate passes and `test_input` runs in Pika Studio.
 
 ### S1. Write the brief
 
@@ -30,7 +30,7 @@ nothing; the pasted output of a tool does.
 ### S2. Let the AI challenge the brief
 
 - **Do:** paste [prompt A](../templates/prompts.md#a-start-a-game-from-a-brief). The AI reads
-  `skill/` and answers seven questions **before** coding.
+  `knowledge/` and answers seven questions **before** coding.
 - **Check:** points 5 (the budget) and 6 (what the robot cannot do). Correct anything wrong
   about the learning design; the AI must not change it on its own.
 - **Done when:** you have answered its questions and agreed on *demo first* (several screens,
@@ -96,7 +96,7 @@ nothing; the pasted output of a tool does.
 | You notice | It usually means | Say |
 | --- | --- | --- |
 | "Done, it works" with no pasted output | it has not run the tools | "Run `tools/smoke.py` and paste the full output." |
-| A function you never saw in the docs, or `os`, `io`, `setTimeout`, `async` | it writes from habit, not from the contract | "Check every call against `contract/api.json`; re-read `skill/SKILL.md`." |
+| A function you never saw in the docs, or `os`, `io`, `setTimeout`, `async` | it writes from habit, not from the contract | "Check every call against `contract/api.json`; re-read `knowledge/SKILL.md`." |
 | It changes the rules or adds a button shortcut to a speaking task | it overrides your learning design | "Keep the brief's learning goals; ask me before changing gameplay." |
 | It quotes a limit from memory ("32 sprites", "80 ms") | numbers from memory are often wrong | "Take limits only from `contract/constraints.json`." <!-- number-ok --> |
 | It creates or edits `s.json`, or says copying to SD makes the game run | it misunderstands publishing | "Never touch `s.json`; publishing is stage S8." |
@@ -104,7 +104,7 @@ nothing; the pasted output of a tool does.
 | The same bug comes back after a fix | it fixed a symptom | "Explain the cause from the code before changing anything." |
 
 Symptoms of the game itself (a sprite that never shows, silence, the game stopping) are
-indexed in `skill/pitfalls.md`; prompt B makes the AI look there first.
+indexed in `knowledge/pitfalls.md`; prompt B makes the AI look there first.
 
 ## See also
 

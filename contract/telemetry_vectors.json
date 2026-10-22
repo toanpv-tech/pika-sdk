@@ -1,0 +1,301 @@
+{
+  "schema": "pika-telemetry-vectors/1",
+  "note": "Behaviour of Telemetry.event shared by the firmware host test (head_esp32/test/host/game_tel/run_tests.py) and tools/smoke_stub.lua. Times are milliseconds on the engine clock. Field types: int, bool (sent as 0/1), num (Lua float, rounded half away from zero), str, strhex (raw bytes given as hex, for invalid UTF-8; c_only), bad (unsupported Lua type). 'fail' records a reason before fields (e.g. fields or opts not a table). A step with 'c_only' cannot be produced from Lua and is skipped by the stub check. Every 'send' is also checked to parse as JSON and to fit 511 bytes.",
+  "vectors": [
+    {
+      "name": "basic_send",
+      "steps": [
+        {"op": "begin", "id": "math_quiz", "trigger": "menu", "pv": "1.0.0"},
+        {"op": "start", "t": 1000, "flush": []},
+        {"op": "event", "t": 1500, "name": "answer", "fields": [["q", "int", 3], ["correct", "bool", true], ["choice", "str", "b"]],
+         "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"math_quiz\",\"trigger\":\"menu\",\"t_ms\":500,\"pv\":\"1.0.0\",\"ev\":\"answer\",\"q\":3,\"correct\":1,\"choice\":\"b\"}}"},
+        {"op": "stats", "sent": 1, "dropped": 0, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "no_fields_no_pv",
+      "steps": [
+        {"op": "begin", "id": "egg", "trigger": "todo", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 7, "name": "egg.open", "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"egg\",\"trigger\":\"todo\",\"t_ms\":7,\"ev\":\"egg.open\"}}"}
+      ]
+    },
+    {
+      "name": "rate_cold_start_at_t0",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 0, "name": "a", "expect": "reject", "why": "rate"},
+        {"op": "stats", "sent": 3, "dropped": 1, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "rate_window_edge",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 0, "name": "a", "expect": "send"},
+        {"op": "event", "t": 4999, "name": "a", "expect": "reject", "why": "rate"},
+        {"op": "event", "t": 5000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 5000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 5000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 5000, "name": "a", "expect": "reject", "why": "rate"}
+      ]
+    },
+    {
+      "name": "rate_spread_calls",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 100, "flush": []},
+        {"op": "event", "t": 100, "name": "a", "expect": "send"},
+        {"op": "event", "t": 2000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 4000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 5000, "name": "a", "expect": "reject", "why": "rate"},
+        {"op": "event", "t": 5100, "name": "a", "expect": "send"},
+        {"op": "event", "t": 6999, "name": "a", "expect": "reject", "why": "rate"},
+        {"op": "event", "t": 7000, "name": "a", "expect": "send"}
+      ]
+    },
+    {
+      "name": "rate_clock_wrap",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 4294967000, "flush": []},
+        {"op": "event", "t": 4294967000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 4294967000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 4294967000, "name": "a", "expect": "send"},
+        {"op": "event", "t": 4703, "name": "a", "expect": "reject", "why": "rate"},
+        {"op": "event", "t": 4704, "name": "a", "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":5000,\"ev\":\"a\"}}"}
+      ]
+    },
+    {
+      "name": "held_during_game_start",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "a2a", "pv": "2.1"},
+        {"op": "event", "t": 10, "name": "stage.start", "fields": [["stage", "int", 1]], "expect": "held"},
+        {"op": "event", "t": 20, "name": "b", "expect": "held"},
+        {"op": "event", "t": 30, "name": "c", "expect": "held"},
+        {"op": "event", "t": 40, "name": "d", "expect": "reject", "why": "pending"},
+        {"op": "start", "t": 100, "flush": [
+          "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"a2a\",\"t_ms\":0,\"pv\":\"2.1\",\"ev\":\"stage.start\",\"stage\":1}}",
+          "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"a2a\",\"t_ms\":0,\"pv\":\"2.1\",\"ev\":\"b\"}}",
+          "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"a2a\",\"t_ms\":0,\"pv\":\"2.1\",\"ev\":\"c\"}}"
+        ]},
+        {"op": "event", "t": 200, "name": "e", "expect": "reject", "why": "rate"},
+        {"op": "event", "t": 5010, "name": "e", "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"a2a\",\"t_ms\":4910,\"pv\":\"2.1\",\"ev\":\"e\"}}"},
+        {"op": "stats", "sent": 4, "dropped": 2, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "aborted_launch_drops_held",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "event", "t": 10, "name": "a", "expect": "held"},
+        {"op": "abort"},
+        {"op": "start", "t": 50, "flush": []},
+        {"op": "event", "t": 60, "name": "a", "expect": "reject", "why": "closed"},
+        {"op": "begin", "id": "g2", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 70, "flush": []},
+        {"op": "stats", "sent": 0, "dropped": 0, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "closed_after_close_not_counted",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 1, "name": "a", "expect": "send"},
+        {"op": "close"},
+        {"op": "event", "t": 2, "name": "a", "expect": "reject", "why": "closed"},
+        {"op": "stats", "sent": 1, "dropped": 0, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "no_session_is_closed",
+      "steps": [
+        {"op": "event", "t": 1, "name": "a", "expect": "reject", "why": "closed"}
+      ]
+    },
+    {
+      "name": "event_name_rules",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "Answer", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "abcdefghijklmnopqrstuvwxy", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "engine.load", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "sys.x", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "a b", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "a\u0000b", "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "abcdefghijklmnopqrstuvwx", "expect": "send"},
+        {"op": "event", "t": 0, "name": "stage.end_2", "expect": "send"},
+        {"op": "stats", "sent": 2, "dropped": 7, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "opts_key_and_level",
+      "steps": [
+        {"op": "begin", "id": "math_quiz", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 10, "name": "content.bad", "key": "quiz", "level": "error", "fields": [["q", "int", 5]], "expect": "send",
+         "json": "{\"key\":\"game.tel.quiz\",\"level\":\"ERROR\",\"data\":{\"id\":\"math_quiz\",\"trigger\":\"menu\",\"t_ms\":10,\"ev\":\"content.bad\",\"q\":5}}"},
+        {"op": "event", "t": 20, "name": "slow", "level": "warn", "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"WARN\",\"data\":{\"id\":\"math_quiz\",\"trigger\":\"menu\",\"t_ms\":20,\"ev\":\"slow\"}}"},
+        {"op": "event", "t": 5000, "name": "x", "key": "quiz.v2", "level": "info", "expect": "send"}
+      ]
+    },
+    {
+      "name": "opts_bad_values",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "key": ".quiz", "expect": "reject", "why": "key"},
+        {"op": "event", "t": 0, "name": "a", "key": "quiz.", "expect": "reject", "why": "key"},
+        {"op": "event", "t": 0, "name": "a", "key": "Quiz", "expect": "reject", "why": "key"},
+        {"op": "event", "t": 0, "name": "a", "key": "", "expect": "reject", "why": "key"},
+        {"op": "event", "t": 0, "name": "a", "key": "abcdefghijklmnopqrstuvwxy", "expect": "reject", "why": "key"},
+        {"op": "event", "t": 0, "name": "a", "level": "fatal", "expect": "reject", "why": "opt_value"},
+        {"op": "event", "t": 0, "name": "a", "level": "INFO", "expect": "reject", "why": "opt_value"},
+        {"op": "event", "t": 0, "name": "a", "fail": "opt_value", "expect": "reject", "why": "opt_value"},
+        {"op": "stats", "sent": 0, "dropped": 8, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "opts_unknown_key_still_sends",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "opt_unknown": true, "expect": "send"},
+        {"op": "event", "t": 1, "name": "a", "opt_unknown": true, "expect": "send"},
+        {"op": "stats", "sent": 2, "dropped": 0, "opt_unknown": 2}
+      ]
+    },
+    {
+      "name": "field_name_rules",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "fields": [["level", "int", 1]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["key", "str", "todo.exit"]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["q", "int", 1], ["q", "int", 2]], "expect": "reject", "why": "field_name", "c_only": "a Lua table cannot hold the same key twice"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["Q", "int", 1]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["a.b", "int", 1]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["abcdefghijklmnopq", "int", 1]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["", "int", 1]], "expect": "reject", "why": "field_name"},
+        {"op": "event", "t": 0, "name": "a", "fields": [["abcdefghijklmnop", "int", 1]], "expect": "send"}
+      ]
+    },
+    {
+      "name": "field_values",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "v", "fields": [["lo", "int", -2147483648], ["hi", "int", 2147483647], ["up", "num", 2.5], ["dn", "num", -2.5], ["f", "bool", false]], "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"ev\":\"v\",\"lo\":-2147483648,\"hi\":2147483647,\"up\":3,\"dn\":-3,\"f\":0}}"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["s", "str", "a\"b\\c\nd"]], "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"ev\":\"v\",\"s\":\"a_b_c_d\"}}"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["s", "str", "\"key\":\"todo.exit\""]], "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"ev\":\"v\",\"s\":\"_key_:_todo.exit_\"}}"}
+      ]
+    },
+    {
+      "name": "field_value_rejects",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "v", "fields": [["n", "int", 2147483648]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["n", "int", -2147483649]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["n", "num", 1e10]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["n", "num", "nan"]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["n", "num", "inf"]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["t", "bad"]], "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fail": "bad_type", "expect": "reject", "why": "bad_type"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["s", "str", "abcdefghijklmnopqrstuvwxyzabcdefghijklmno"]], "expect": "reject", "why": "str_long"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["s", "str", "abcdefghijklmnopqrstuvwxyzabcdefghijklmn"]], "expect": "send"},
+        {"op": "stats", "sent": 1, "dropped": 8, "opt_unknown": 0}
+      ]
+    },
+    {
+      "name": "too_many_and_too_big",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "v", "fields": [["a", "int", 1], ["b", "int", 1], ["c", "int", 1], ["d", "int", 1], ["e", "int", 1], ["f", "int", 1], ["g", "int", 1], ["h", "int", 1], ["i", "int", 1]], "expect": "reject", "why": "too_many"},
+        {"op": "event", "t": 0, "name": "v", "fields": [
+          ["aaaaaaaaaaaaaaa1", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa2", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa3", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa4", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa5", "str", "0123456789012345678901234567890123456789"]], "expect": "reject", "why": "too_big"},
+        {"op": "event", "t": 0, "name": "v", "fields": [
+          ["aaaaaaaaaaaaaaa1", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa2", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa3", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa4", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa5", "str", "012345678901234567890123456789"]], "expect": "send"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["a", "int", 1], ["b", "int", 1], ["c", "int", 1], ["d", "int", 1], ["e", "int", 1], ["f", "int", 1], ["g", "int", 1], ["h", "int", 1]], "expect": "send"}
+      ]
+    },
+    {
+      "name": "first_error_wins",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "Bad", "key": ".x", "fields": [["level", "int", 1]], "expect": "reject", "why": "name"},
+        {"op": "event", "t": 0, "name": "ok", "key": ".x", "fields": [["level", "int", 1]], "expect": "reject", "why": "key"}
+      ]
+    },
+    {
+      "name": "worst_case_fits",
+      "steps": [
+        {"op": "begin", "id": "abcdefghijklmnopqrstuvwxyz01234", "trigger": "menu", "pv": "1.2.3-beta.45678"},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 4294967295, "name": "abcdefghijklmnopqrstuvwx", "key": "abcdefghijklmnopqrstuvwx", "level": "error", "fields": [
+          ["aaaaaaaaaaaaaaa1", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa2", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa3", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa4", "str", "0123456789012345678901234567890123456789"],
+          ["aaaaaaaaaaaaaaa5", "str", "012345678901234567890123456789"]], "expect": "send"}
+      ]
+    },
+    {
+      "name": "session_identity_cleaned",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "todo", "pv": "1.0.0\"x\\y-very-long-tail"},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "a", "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"todo\",\"t_ms\":0,\"pv\":\"1.0.0_x_y-very-l\",\"ev\":\"a\"}}"}
+      ]
+    },
+    {
+      "name": "utf8_kept_and_cleaned",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": "1.0.0-aéééééé"},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "v", "fields": [["h", "str", "héllo"], ["e", "str", "😀"]], "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"pv\":\"1.0.0-aéééé\",\"ev\":\"v\",\"h\":\"héllo\",\"e\":\"😀\"}}"},
+        {"op": "event", "t": 0, "name": "v", "fields": [["s", "strhex", "61ff62c0af63eda080e282"]], "expect": "send", "c_only": true,
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"pv\":\"1.0.0-aéééé\",\"ev\":\"v\",\"s\":\"a_b__c_____\"}}"}
+      ]
+    },
+    {
+      "name": "tv_is_a_plain_field",
+      "steps": [
+        {"op": "begin", "id": "g", "trigger": "menu", "pv": ""},
+        {"op": "start", "t": 0, "flush": []},
+        {"op": "event", "t": 0, "name": "v", "fields": [["tv", "int", 2]], "expect": "send",
+         "json": "{\"key\":\"game.tel\",\"level\":\"INFO\",\"data\":{\"id\":\"g\",\"trigger\":\"menu\",\"t_ms\":0,\"ev\":\"v\",\"tv\":2}}"}
+      ]
+    }
+  ]
+}

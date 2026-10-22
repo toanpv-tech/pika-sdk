@@ -29,11 +29,11 @@ Play at least three full rounds, then exit and relaunch, with a serial monitor a
 | Check | Line | Pass |
 | --- | --- | --- |
 | The pack opens | `game.error` | no `phase=load` or `phase=render` line |
-| It ended cleanly | `game.stop` | `end=norm` (or `end=home` after HOME), no `err=` |
+| It ended cleanly | `game.stop` | `end=norm` (also after a short HOME that `on_home` did not keep; `end=home` after HOME held or ON/OFF), no `err=` |
 | No call failed silently | `game.stop` | `api_fail=0` and no `drop=` field |
 | Frames keep time | `game.running` (ignore the first line), `game.stop` | `tick_hz` close to `tick_hz_max` = 33 in steady play; low `slow_pm` |
 | No heavy frames in play | `game.running` | no `tick_us` or `gap_us` spike outside scene changes 🧪 |
-| Real time is real | wall clock | 60 s on a watch is 60 s in the game (timers use `Timer.millis()`) |
+| Real time is real | wall clock | 60 s on a watch is 60 s in the game (timers use `Timer.millis()`) <!-- number-ok --> |
 | No leak between rounds | `game.running`, `game.start` | `arena`, `heap` and `psram` return to the same level after each round; `psram` in `game.start` does not fall from one launch to the next |
 | Nothing stalled | `game.stalled` | no line |
 
@@ -56,7 +56,7 @@ Play at least three full rounds, then exit and relaunch, with a serial monitor a
 
 ### Audio
 
-- [ ] Spoken instructions are not cut off by effects (one channel).
+- [ ] Effects are not delayed by long voice lines or loops (one channel: a new play waits for the current sound unless the game stops it first).
 - [ ] Every flow that waits for a sound to finish also has a time limit.
 - [ ] Volume is even across files.
 

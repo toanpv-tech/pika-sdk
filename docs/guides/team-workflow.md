@@ -35,7 +35,7 @@ where work usually goes wrong between people. No stage needs a robot until S8.
 
 ## When something new goes wrong
 
-If a failure is not in `skill/pitfalls.md`, or a document is wrong, report it to the SDK
+If a failure is not in `knowledge/pitfalls.md`, or a document is wrong, report it to the SDK
 maintainers so it can be added ([MAINTAINING.md](../../MAINTAINING.md)).
 
 ## See also

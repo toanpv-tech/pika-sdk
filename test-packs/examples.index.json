@@ -1,0 +1,110 @@
+{
+  "schema": "pika-sdk-examples/1",
+  "note": "Single-feature robot test packs, one per public Lua global (test_<global>). Every pack runs on libs/testkit: LEFT/RIGHT move, ENTER runs a row, row 1 runs the whole suite, results go to the screen and to UART as '<tag> [NN/NN] PASS|FAIL|SKIP group :: case :: detail'. Rows marked manual end the game and are left out of RUN SUITE. covers = the globals and hooks a pack tests; needs = what it needs beyond smoke.py (robot, voice-server, operator). Pika Studio copies one into the workspace with Pika: New Game from Example. s.json checksums are issued when a pack is published through the Pika platform; Studio neither creates nor checks them.",
+  "examples": [
+    {
+      "dir": "test_input",
+      "name": "Input Test",
+      "demonstrates": ["input"],
+      "covers": ["Input", "on_input", "on_input_lost"],
+      "needs": ["operator"],
+      "summary": "Three-button input: a protocol monitor checks every event (press/release pairing, repeat, poll vs callback, lost events) while guided tests ask the operator to tap, hold, combine and mash buttons."
+    },
+    {
+      "dir": "test_speaker",
+      "name": "Speaker Test",
+      "demonstrates": ["speaker"],
+      "covers": ["Speaker", "on_sound_end", "on_sound_lost"],
+      "needs": ["robot"],
+      "summary": "Speaker: every clip played to its end, play/stop/preempt/loop with the right on_sound_end reason, argument checks, volume, cooldown flood and stop_all."
+    },
+    {
+      "dir": "test_text",
+      "name": "Text Test",
+      "demonstrates": ["text", "font"],
+      "covers": ["Text"],
+      "needs": ["operator"],
+      "summary": "Text and runtime TTF fonts (Nunito): return values and errors of every call, the 8-slot pool, font-face reuse, then on-screen cards the operator confirms: glyphs incl. Vietnamese, sizes, weight, anchors, colours, show/move."
+    },
+    {
+      "dir": "test_sprite",
+      "name": "Sprite Test",
+      "demonstrates": ["sprite"],
+      "covers": ["Sprite"],
+      "needs": ["robot", "operator"],
+      "summary": "Sprite.new / image / solid and every sprite method: argument guards, nil/false failures, hit_test and intersects on known rectangles, transform and pivot limits, set_frame strips, calls after destroy, then cards the operator confirms: RGB565 colours, alpha, frame swap, flip, rotation, scale, opacity, z-order, visibility, pivot."
+    },
+    {
+      "dir": "test_anim",
+      "name": "Anim Test",
+      "demonstrates": ["anim"],
+      "covers": ["Anim"],
+      "needs": ["robot", "operator"],
+      "summary": "GIF and MJPEG playback: argument guards, nil on a missing or non-GIF file, the play/pause/resume/stop state machine and the one-playing-Anim rule, timed one-shot / loop / pause / rewind checks, then cards the operator confirms: motion, pause, stop, hide/show, move, transparency."
+    },
+    {
+      "dir": "test_shape",
+      "name": "Shape Test",
+      "demonstrates": ["shape"],
+      "covers": ["Shape"],
+      "needs": ["robot", "operator"],
+      "summary": "Shape lines: argument guards on Shape.line and every method, pool_full / bbox_too_large / no_mem refusals that cost no slot or budget, stale handles and <close>, the raster cache, bounded churn and per-frame stress, then a gallery the operator confirms: widths, caps, dashes, colours, opacity, angles, z-order, visibility, polygons."
+    },
+    {
+      "dir": "test_led",
+      "name": "LED Test",
+      "demonstrates": ["led"],
+      "covers": ["Led"],
+      "needs": ["robot", "operator"],
+      "summary": "Body LEDs: is_available and brightness at start, argument guards (false, never raises), blink/pulse period limits, brightness mirror and rounding, the per-frame command queue (merge, storm, flood) through Led.stats, then colours, presets, blink and pulse the operator confirms on the robot body."
+    },
+    {
+      "dir": "test_servo",
+      "name": "Servo Test",
+      "demonstrates": ["servo"],
+      "covers": ["Servo"],
+      "needs": ["robot", "operator"],
+      "summary": "Servos: list() against the manifest, argument guards (false, never raises), accepted moves and easings, is_busy over time, stop / stop(), same-frame merge, sent and reject counters (refused gesture, duty limit), then each joint, easings, stop-to-rest and poses the operator confirms. Motions stay within about 25 degrees of rest and always end at rest."
+    },
+    {
+      "dir": "test_voice",
+      "name": "Voice Test",
+      "demonstrates": ["voice"],
+      "covers": ["Voice", "on_voice_event"],
+      "needs": ["voice-server", "operator"],
+      "summary": "Voice keyword spotting: argument and size guards (local), then real sessions: hear a spoken keyword with latency, busy on a second list, no_keywords from Voice.start, clean reopen. Needs a voice server (Pika: Configure Voice ASR Server) or a robot."
+    },
+    {
+      "dir": "test_telemetry",
+      "name": "Telemetry Test",
+      "demonstrates": ["telemetry"],
+      "covers": ["Telemetry"],
+      "needs": ["robot", "network"],
+      "summary": "Telemetry.event and caps: caps shape and limits, every bad argument returns false and never raises, valid payloads, calls held during game_start, the 3-per-5 s rate limit with exact window edges, and contract/telemetry_vectors.json replayed. Prints each accepted event to compare with game.tel in Datadog."
+    },
+    {
+      "dir": "test_ranking",
+      "name": "Ranking Test",
+      "demonstrates": ["ranking"],
+      "covers": ["Ranking"],
+      "needs": ["robot", "network"],
+      "summary": "Ranking.report guards (false, never raises) and numeric-string scores, then report a score of 0 and poll Ranking.get_result with a 10 s deadline: result shape and consume-once. Skips in talk-flow or when no result can arrive. Each suite run posts two real scores of 0."
+    },
+    {
+      "dir": "test_timer",
+      "name": "Timer Test",
+      "demonstrates": ["timer"],
+      "covers": ["Timer", "on_tick"],
+      "needs": ["robot"],
+      "summary": "Timer.millis is an integer and never goes back, on_tick dt is the nominal 33 ms while frames are about 30 ms apart, and 2000 calls in one frame stay cheap."
+    },
+    {
+      "dir": "test_engine",
+      "name": "Engine Test",
+      "demonstrates": ["engine"],
+      "covers": ["Engine", "game_start", "on_home", "game_end"],
+      "needs": ["robot", "operator"],
+      "summary": "Engine and session hooks: game_start params, Engine.show, Engine.report_result checks, on_home keeping the game alive, and manual rows that end the game through Engine.exit (with and without a reported result)."
+    }
+  ]
+}

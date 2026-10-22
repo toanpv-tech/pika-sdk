@@ -3,7 +3,7 @@
 Original copies of the shared Lua modules for Pika games. A game ships its own copy in
 `<game>/libs/` (Pika Studio's game tooling copies a module with its dependencies), so every pack
 is self-contained. Inside a game, load them with the `libs/` prefix. Exact function lists:
-[../skill/libs-catalog.md](../skill/libs-catalog.md). Machine-readable list: [libs.index.json](libs.index.json).
+[../knowledge/libs-catalog.md](../knowledge/libs-catalog.md). Machine-readable list: [libs.index.json](libs.index.json).
 
 ```text
 libs/
@@ -11,7 +11,8 @@ libs/
 ├── animator.lua       # require("libs/animator")   numeric tween: writes the eased value to target.value
 ├── ui.lua             # require("libs/ui")         one-line selector + yes/no confirm (one Text)
 ├── settings.lua       # require("libs/settings")   pre-game settings screen, labels are images, on_start(cfg)
-├── testkit.lua        # require("libs/testkit")    in-game test harness (sync tests)
+├── testkit.lua        # require("libs/testkit")    in-game test harness + on-robot suite runner
+├── tel.lua            # require("libs/tel")        Telemetry.event wrapper: false on heads without the API
 ├── math/              # require("libs/math/<mod>") easing, lerp (lerp, clamp, map), vec2
 └── util/              # require("libs/util/<mod>") str, tbl
 ```

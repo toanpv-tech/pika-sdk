@@ -1,4 +1,13 @@
 # Game packs carry s.json checksums of their exact bytes. Line-ending
 # conversion on checkout would change those bytes and the robot would reject
 # the pack, so git must store and restore these files byte for byte.
-examples/** -text
+test-packs/** -text
+
+# Written by tools/gen_contract.py: collapsed in GitHub diffs, never edited by hand.
+docs/reference/api.md linguist-generated=true
+docs/reference/known-issues.md linguist-generated=true
+docs/reference/manifest.md linguist-generated=true
+docs/reference/telemetry.md linguist-generated=true
+knowledge/api-contract.md linguist-generated=true
+knowledge/constraints.md linguist-generated=true
+kit/pika-constraints.js linguist-generated=true

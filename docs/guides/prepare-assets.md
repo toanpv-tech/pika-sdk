@@ -54,7 +54,7 @@ File size does not matter, pixel size does:
 | `.rgb565` or a solid block | `w*h*2` bytes |
 | GIF / MJPEG | the whole file plus `w*h*2` bytes |
 
-A full-screen image costs about 450 KB as a transparent PNG and about 300 KB without alpha.
+A full-screen image costs about 450 KB as a transparent PNG and about 300 KB without alpha. <!-- number-ok -->
 The robot decides from the PNG header, so an RGBA PNG whose alpha is always opaque still
 costs the larger amount: **export opaque images without an alpha channel**. While a PNG
 decodes, its file is held in memory as well. Agree on each scene's total with the developer
@@ -75,7 +75,7 @@ use a GIF or MJPEG for that. Paint the background colour behind the character, b
   font covers little beyond ASCII: every script shown (Vietnamese diacritics, Korean,
   Japanese, Chinese, Thai, ...) needs a TTF that contains those glyphs, under a licence that
   allows embedding. Symbols and emoji (★ ◀ ▶) go into images.
-- Only a few (font, size) pairs can be in use at once (`font_slots` = 4): settle on a small
+- Only a few (font, size) pairs can be in use at once (`font_slots` = 8): settle on a small
   set of sizes for the whole game.
 - There is no word wrap and no width query: design each line for the **longest**
   translation, with the line breaks decided in advance.
@@ -97,9 +97,9 @@ alpha channel of a PNG. More substitutions: [Port a demo](port-a-demo.md#porting
   in `manifest.json`. A pack declares at most `sound_aliases_max` = 64 aliases, and every
   declared file must exist: either mistake rejects the **whole** pack, so deliver placeholder
   files under the final names early.
-- **One channel:** a new sound cuts the one playing, and plays closer together than the
-  cooldown (`sound_cooldown_ms` = 150) are refused. Keep frequent effects short, and make sure
-  spoken instructions are not cut by an effect.
+- **One channel:** sounds play one after another; a new sound waits for the current one unless
+  the game stops it first, and plays closer together than the cooldown (`sound_cooldown_ms` = 150)
+  are refused. Keep effects short and keep long loops out of scenes with frequent effects.
 - There is no text-to-speech: every spoken line is a recording. The demo gate prints the list.
 - Trim leading and trailing silence and normalise loudness across files.
 

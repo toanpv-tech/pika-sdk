@@ -8,7 +8,7 @@ while you play. A demo that stays inside the kit ports to Lua by transliteration
 layout, timing and feel here, in seconds, instead of on a robot.
 
 The rules the demo must follow (R1–R9) and every lint code are defined once, in
-[skill/demo-kit.md](../../skill/demo-kit.md): the page the AI follows too. Read it once.
+[knowledge/demo-kit.md](../../knowledge/demo-kit.md): the page the AI follows too. Read it once.
 
 ## The one rule: static inside, dynamic outside
 
@@ -20,7 +20,7 @@ The rules the demo must follow (R1–R9) and every lint code are defined once, i
 
 ## Start from the template
 
-`kit/template/index.html` is a complete demo; `examples/pick_word/` is its Lua port.
+`kit/template/index.html` is a complete demo.
 
 1. Copy `kit/template/` to a sibling folder inside `kit/` named after your game id
    (`snake_case`). Elsewhere, copy `kit/pika-constraints.js` and `kit/pika-frame.js` too and

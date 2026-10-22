@@ -47,17 +47,19 @@ Read every number below with these facts in mind:
 ### game.start
 
 ```text
-game.start game=<id> trigger=<menu|a2a> ready=<ms> queue=<ms> init=<ms> load=<ms> anim=<ms> render=<ms> arena=<B> psram=<B> heap=<B> fps_target=<n>
+game.start game=<id> trigger=<menu|a2a|todo> ready=<ms> queue=<ms> init=<ms> load=<ms> anim=<ms> render=<ms> arena=<B> psram=<B> heap=<B> fps_target=<n> [pv=<version>]
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `trigger` | `menu`: opened from the game menu. `a2a`: started inside a talk-flow session. |
+| `trigger` | `menu`: opened from the game menu, or assigned by the server. `a2a`: started inside a talk-flow session. `todo`: started inside a talk-flow session while a to-do journey runs (`params.is_a2a` is also `true`). |
 | `ready` | Wait from the launch request to the first frame; `queue`, `init`, `load`, `anim`, `render` split it in order, and the largest names the phase to optimise. |
 | `queue`, `init` | Engine start-up before the pack is read; not under the game's control. |
 | `load` | Folder CRC check, manifest, entry script and `game_start`. Grows with the total pack size and with work done in `game_start`. |
 | `anim`, `render` | Removing the loading animation and entering the game screen. |
 | `arena` | Lua heap in use after `game_start`: the baseline for `arena_pk`. |
+| `pv` | Pack version: manifest `version`, cut to {{tel_pv_max}} bytes, `"`, `\` and control bytes as `_` (spaces as `_` on the serial line only). Absent when the manifest has no `version` or telemetry is off. |
+| `pv` | Pack version: manifest `version`, cut to {{tel_pv_max}} bytes, `"`, `\` and control bytes as `_` (spaces as `_` on the serial line only). Absent when the manifest has no `version` or telemetry is off. |
 | `psram` | Largest free PSRAM block after loading. Compare between sessions. |
 | `heap` | Largest free internal RAM block: the baseline for `heap_min`. |
 
@@ -89,7 +91,7 @@ One line per window, only when something happened; only non-zero keys appear. On
 log the body has no braces:
 
 ```text
-game.warn "overrun":37,"Speaker.play":2,"heap":11840
+game.warn "overrun":37,"heap":11840,"Speaker.play":2
 ```
 
 | Key | Type | Meaning |
@@ -151,12 +153,12 @@ The Lua watchdog did not fire, so the engine is stuck inside native code, not in
 ### game.stop
 
 ```text
-game.stop game=<id> end=<norm|home|err|stall> [err=<CODE>] dur=<s> frames=<n> tick_hz=<n> draw_pm=<n> p95=<us> slow_pm=<n> arena_pk=<B> heap_min=<B> psram=<B> [drop=<in>/<snd>/<nohook>/<svo>/<led>] api_fail=<n>
+game.stop game=<id> end=<norm|home|err|stall> [err=<CODE>] dur=<s> frames=<n> tick_hz=<n> draw_pm=<n> p95=<us> slow_pm=<n> arena_pk=<B> heap_min=<B> psram=<B> [drop=<in>/<snd>/<nohook>/<svo>/<led>] api_fail=<n> tel=<sent>/<drop> tel_us_max=<us> [tel_off=1]
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `end` | Checked in this order: `stall` (the engine stalled), `err` (any error was recorded, even one the game survived, e.g. in `on_voice_event`), `home` (the robot stopped the game from outside: HOME held, voice lost, a system stop), `norm` (the game ended itself: `Engine.exit`, or a short HOME with `on_home` not keeping it). |
+| `end` | Checked in this order: `stall` (the engine stalled), `err` (any error was recorded, even one the game survived, e.g. in `on_voice_event`), `home` (the robot stopped the game from outside: HOME held, ON/OFF pressed, voice lost, a system stop), `norm` (the game ended itself: `Engine.exit`, or a short HOME with `on_home` not keeping it). |
 | `err` | Error code, only when one was recorded |
 | `dur`, `frames` | Session length and frames. `frames` far below `dur` × {{tick_hz_max}} means the game froze for stretches. |
 | `tick_hz` | `frames / dur` |
@@ -168,11 +170,17 @@ game.stop game=<id> end=<norm|home|err|stall> [err=<CODE>] dur=<s> frames=<n> ti
 | `psram` | Largest free PSRAM block at teardown, before the pack is unloaded |
 | `drop` | Only when non-zero: input events lost / `on_sound_end` events lost / sounds played without `on_sound_end` / servo commands refused / LED commands dropped |
 | `api_fail` | Failed binding calls in the session (same bindings as `game.warn`) |
+| `tel` | `Telemetry.event` messages sent / dropped this session. Dropped counts rejected calls (not those after the game ended) and accepted events the engine could not hand on. |
+| `tel_us_max` | Longest single `Telemetry.event` call, µs |
+| `tel_off` | Telemetry memory could not be allocated; every `Telemetry.event` returned `false` |
+| `tel` | `Telemetry.event` messages sent / dropped this session. Dropped counts rejected calls (not those after the game ended) and accepted events the engine could not hand on. |
+| `tel_us_max` | Longest single `Telemetry.event` call, µs |
+| `tel_off` | Telemetry memory could not be allocated; every `Telemetry.event` returned `false` |
 
 A game that fails to load or to enter the screen prints `game.error` and no `game.stop`.
 
 ```text
-game.stop game=bubble end=norm dur=127 frames=4180 tick_hz=33 draw_pm=968 p95=16000 slow_pm=11 arena_pk=207872 heap_min=62464 psram=2983936 api_fail=0
+game.stop game=bubble end=norm dur=127 frames=4180 tick_hz=33 draw_pm=968 p95=16000 slow_pm=11 arena_pk=207872 heap_min=62464 psram=2983936 api_fail=0 tel=0/0 tel_us_max=0
 ```
 
 ## Diagnosis (heuristics)
@@ -233,7 +241,7 @@ choose where to look, then confirm with a change and a new run.
 | `game.asset: sprite_open fail reason=validate` / `too_small` | Raw file missing or not matching `s.json` / smaller than `w*h*2` |
 | `game.asset: png_decode fail reason=too_large` | PNG larger than {{img_max_w}} × {{img_max_h}} |
 | `game.anim: anim_open fail reason=size_oor` / `canvas_too_large` | Animation file over {{anim_max_file_mib}} MiB / frame over {{img_max_w}} × {{img_max_h}} |
-| `game.render: set_scale refused: sprite WxH exceeds {{transform_max_px}} px transform limit` | Transform on a sprite over the limit (logged once per sprite) |
+| `game.render: sprite_xform refused op=set_scale w=... h=... max={{transform_max_px}}` | Transform on a sprite over the limit (logged once per sprite) |
 | `game.render: font cache full: all {{font_slots}} faces in use` | One (font, size) pair too many |
 | `game.render: line pool budget: ...` | `Shape` lines exceed their {{line_pool_kib}} KiB raster budget |
 | `game.sound: play throttled: alias='x' ...` | `Speaker.play` within the {{sound_cooldown_ms}} ms cooldown |
@@ -241,6 +249,18 @@ choose where to look, then confirm with a change and a new run.
 | `game.sound: inflight saturated; no finish hookup` | Plays issued too fast; this one gets no `on_sound_end` |
 | `game.input: ring overflow delta=...` | Button events lost; `on_input_lost` fires |
 | `game.bind: Text:set on stale handle` | Method called on a destroyed Text |
+| `game.tel: telemetry reject ev=<name> why=<reason> len=<n>` | First rejected `Telemetry.event` of the session (calls after the game ended excluded). `ev` is empty when `why=name`. `why`: `name`, `key`, `opt_value`, `field_name`, `bad_type`, `str_long`, `too_many`, `too_big`, `rate`, `pending` |
+| `game.tel: telemetry opt_unknown ev=<name> n=<n>` | First call with an unknown `opts` key; the event was still sent |
+| `game.engine: telemetry ctx alloc failed ...` | Matches `tel_off=1`: `Telemetry.event` is disabled for the session |
+| `game.engine: telemetry drop key=game.tel reason=outbox_full ...` | An accepted event was lost before it left the head |
+
+An accepted `Telemetry.event` is never printed on the serial log: it goes straight to the server as `game.tel`.
+| `game.tel: telemetry reject ev=<name> why=<reason> len=<n>` | First rejected `Telemetry.event` of the session (calls after the game ended excluded). `ev` is empty when `why=name`. `why`: `name`, `key`, `opt_value`, `field_name`, `bad_type`, `str_long`, `too_many`, `too_big`, `rate`, `pending` |
+| `game.tel: telemetry opt_unknown ev=<name> n=<n>` | First call with an unknown `opts` key; the event was still sent |
+| `game.engine: telemetry ctx alloc failed ...` | Matches `tel_off=1`: `Telemetry.event` is disabled for the session |
+| `game.engine: telemetry drop key=game.tel reason=outbox_full ...` | An accepted event was lost before it left the head |
+
+An accepted `Telemetry.event` is never printed on the serial log: it goes straight to the server as `game.tel`.
 
 A missing PNG for `Sprite.image` is logged only at debug level; rely on the `(nil, msg)` it
 returns.

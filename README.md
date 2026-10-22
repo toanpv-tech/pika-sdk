@@ -10,8 +10,8 @@ needs to build for it.
 | You want to | Start here |
 | --- | --- |
 | make your first game | [docs/start/getting-started.md](docs/start/getting-started.md) |
-| make a game with an AI assistant | [docs/guides/vibe-coding.md](docs/guides/vibe-coding.md) (the AI reads [skill/SKILL.md](skill/SKILL.md)) |
-| let Claude Code build it | open this folder in Claude Code and type `/pika-game <your idea>` |
+| make a game with an AI assistant | [docs/guides/vibe-coding.md](docs/guides/vibe-coding.md) (the AI reads [knowledge/SKILL.md](knowledge/SKILL.md)) |
+| let Claude Code build it | `/plugin install pika-game --marketplace toanpv-tech/pika-sdk`, then type `/pika-game <your idea>` in any folder |
 | sketch a game in the browser first | [docs/guides/design-a-demo.md](docs/guides/design-a-demo.md) · [kit/template/](kit/template/) |
 | look up a call or a limit | [docs/reference/api.md](docs/reference/api.md) · [contract/](contract/) |
 | see every stage and its gate | [docs/reference/pipeline.md](docs/reference/pipeline.md) |
@@ -41,12 +41,13 @@ pika-sdk/
 │   ├── semantics.json    the behaviour of every call and hook, known issues      (hand-written)
 │   └── pages/            reference pages written around {{key}} placeholders     (hand-written)
 ├── docs/          for people: start/, guides/, concepts/, reference/, templates/ (docs/README.md)
-├── skill/         for AI assistants: routing, rules, recipes, templates (skill/SKILL.md)
+├── knowledge/     for AI assistants: routing, rules, recipes (knowledge/SKILL.md)
+├── starters/      game skeletons to copy into games/<id>/: minimal-game, structured-game
 ├── kit/           browser robot frame: pika-frame.js, pika-constraints.js, template/
 ├── libraries/     Lua modules to copy into <game>/libs/
-├── examples/      runnable packs (pick_word = the kit template, ported)
-├── tools/         gen_contract.py · check_docs.py · smoke.py · playtest.js · check_spec.py · png2rgb565.py
-├── lua-5.5.0/     the Lua source the engine embeds, with the robot's build flags
+├── test-packs/   robot test packs, one per Lua global (test_input, test_speaker, ...)
+├── tools/         gen_contract.py · check_docs.py · smoke.py · playtest.js · check_spec.py · png2rgb565.py · gen_tel_vectors.py
+├── AGENTS.md      where an AI assistant starts (CLAUDE.md imports it)
 ├── sdk_version    the SDK version (shown by Pika Studio)
 └── sdk.index.json section manifest read by Pika Studio
 ```

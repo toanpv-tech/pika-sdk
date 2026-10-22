@@ -6,12 +6,11 @@ Writes:
   kit/pika-constraints.js        constraints for the browser kit (file:// cannot fetch JSON)
   docs/reference/api.md          full API reference    | rendered by tools/render_docs.py from
   docs/reference/known-issues.md known issues, PC gaps | contract/semantics.json (hand-written
-  skill/api-contract.md          AI cheat sheet        | behaviour), every {{key}} filled from
-  skill/constraints.md           AI limits page        | constraints.json
+  knowledge/api-contract.md      AI cheat sheet        | behaviour), every {{key}} filled from
+  knowledge/constraints.md       AI limits page        | constraints.json
 
   docs/reference/manifest.md     } rendered from contract/pages/*.md
   docs/reference/telemetry.md    }
-  lua-5.5.0/CMakeLists.txt, luaconf.h   copied from the firmware's Lua build
 
 semantics.json must describe exactly the names in api.json: a missing or extra
 entry, or an unknown {{key}}, fails the run.
@@ -80,6 +79,15 @@ MACROS = [
     ("game_id_max_len", "core/engine_internal.h", "GAME_ID_FIELD_LEN"),
     ("manifest_name_max_len", "core/engine_internal.h", "GAME_DISPLAY_NAME_FIELD_LEN"),
     ("manifest_main_max_len", "core/engine_internal.h", "GAME_ENTRY_SCRIPT_FIELD_LEN"),
+    ("tel_name_max", "core/game_tel.h", "GAME_TEL_NAME_MAX"),
+    ("tel_key_max", "core/game_tel.h", "GAME_TEL_KEY_SUFFIX_MAX"),
+    ("tel_fields_max", "core/game_tel.h", "GAME_TEL_FIELDS_MAX"),
+    ("tel_field_name_max", "core/game_tel.h", "GAME_TEL_FIELD_NAME_MAX"),
+    ("tel_str_max", "core/game_tel.h", "GAME_TEL_STR_MAX"),
+    ("tel_fields_max_bytes", "core/game_tel.h", "GAME_TEL_FIELDS_MAX_BYTES"),
+    ("tel_pv_max", "core/game_tel.h", "GAME_TEL_PV_MAX"),
+    ("text_dedup_max_len", "render/lvgl_renderer.c", "GAME_TEXT_STR_MAX"),
+    ("servo_pose_busy_ms", "subsystems/servo/servo_internal.h", "GAME_SERVO_POSE_EST_MS"),
 ]
 
 # (key, file under the firmware root, macro): limits enforced outside the engine.
@@ -87,6 +95,30 @@ FW_MACROS = [
     ("icon_max_file_bytes", "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp", "GAME_COVER_MAX_FILE"),
     ("icon_max_px", "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp", "GRID_ICON_MAX"),
     ("icon_cell_px", "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp", "GRID_ICON_PX"),
+    ("rank_result_buf_max", "head_esp32/components/game_engine/include/game_engine_host.h", "RANK_RESULT_BUF_MAX"),
+    # The body board clamps and throttles every game servo command.
+    ("servo_head_min_deg", "back_esp32/main/src/configs/configs.h", "SERVO_HEAD_MIN_DEG"),
+    ("servo_head_max_deg", "back_esp32/main/src/configs/configs.h", "SERVO_HEAD_MAX_DEG"),
+    ("servo_base_min_deg", "back_esp32/main/src/configs/configs.h", "SERVO_BODY_MIN_DEG"),
+    ("servo_base_max_deg", "back_esp32/main/src/configs/configs.h", "SERVO_BODY_MAX_DEG"),
+    ("servo_left_min_deg", "back_esp32/main/src/configs/configs.h", "SERVO_LEFT_MIN_DEG"),
+    ("servo_left_max_deg", "back_esp32/main/src/configs/configs.h", "SERVO_LEFT_MAX_DEG"),
+    ("servo_right_min_deg", "back_esp32/main/src/configs/configs.h", "SERVO_RIGHT_MIN_DEG"),
+    ("servo_right_max_deg", "back_esp32/main/src/configs/configs.h", "SERVO_RIGHT_MAX_DEG"),
+    ("servo_move_min_ms", "back_esp32/main/src/configs/configs.h", "SERVO_GAME_DUR_MIN_MS"),
+    ("servo_move_max_ms", "back_esp32/main/src/configs/configs.h", "SERVO_GAME_DUR_MAX_MS"),
+    ("servo_stop_ms", "back_esp32/main/src/configs/configs.h", "SERVO_GAME_STOP_MS"),
+]
+# (key, file under the firmware root, regex with one number): values eval_macro cannot parse.
+FW_REGEX = [
+    ("servo_duty_window_s", "back_esp32/main/src/configs/configs.h", r"#define\s+SERVO_DUTY_WINDOW_US\s+\(\s*(\d+)LL"),
+    ("servo_duty_limit_s", "back_esp32/main/src/configs/configs.h", r"#define\s+SERVO_DUTY_LIMIT_US\s+\(\s*(\d+)LL"),
+    ("servo_duty_cooldown_s", "back_esp32/main/src/configs/configs.h", r"#define\s+SERVO_DUTY_COOLDOWN_US\s+\(\s*(\d+)LL"),
+    ("button_click_debounce_ms", "back_esp32/main/src/driver/button/button.h", r"DEBOUNCE_INTERVAL_MS\s*=\s*(\d+)"),
+    ("show_hold_max_s", "head_esp32/components/game_engine/src/core/engine_core.c",
+     r"#define\s+ENGINE_SHOW_HOLD_MAX_US\s+\((\d+)LL\s*\*\s*1000000LL\)"),
+    ("exit_defer_ms", "head_esp32/components/game_engine/src/core/engine_core.c",
+     r"#define\s+ENGINE_EXIT_DEFER_MAX_US\s+(\d+)000LL"),
 ]
 
 # Button auto-repeat is timed by the body board and forwarded as Input.REPEAT events.
@@ -108,7 +140,6 @@ TELEMETRY = [
 BUTTON_CPP = os.path.join("back_esp32", "main", "src", "driver", "button", "button.cpp")
 # Build flags of the vendored Lua interpreter.
 LUA_CMAKE = os.path.join("head_esp32", "components", "lua-5.5.0", "CMakeLists.txt")
-LUA_MIRROR = ["CMakeLists.txt", "luaconf.h"]
 
 # (key, sdkconfig symbol, converter)
 KCONFIG = [
@@ -121,6 +152,9 @@ KCONFIG = [
     ("sound_finish_ring", "CONFIG_GAME_SOUND_FINISH_RING_SIZE", int),
     ("freertos_hz", "CONFIG_FREERTOS_HZ", int),
     ("games_root", "CONFIG_GAME_ENGINE_GAMES_ROOT", str),
+    ("todo_root", "CONFIG_GAME_ENGINE_TODO_ROOT", str),
+    ("tel_rate_max", "CONFIG_GAME_TELEMETRY_RATE_MAX", int),
+    ("tel_rate_window_ms", "CONFIG_GAME_TELEMETRY_RATE_WINDOW_MS", int),
 ]
 
 # Behaviour that is not a single macro. Each value names what proves it.
@@ -130,9 +164,9 @@ FACTS = {
     "string_limits_include_nul": "alias/path/action caps count the terminating NUL: usable length is cap - 1",
     "sound_alias_overflow": "reject_pack (sound.c install_entry -> goto bad)",
     "sound_path_missing": "reject_pack (sound.c preload stat at load)",
-    "sound_channels": "one; a new play preempts the current sound (on_sound_end REASON_PREEMPTED)",
+    "sound_channels": "one; a new play becomes current (the old alias gets on_sound_end REASON_PREEMPTED) but its clip is queued until the playing clip ends (audio_priority_queue.cpp DetermineAction: HIGH over HIGH = queue only)",
     "anim_concurrent": 1,
-    "sprite_cap": "none; bounded by free PSRAM: PNG with alpha w*h*3 bytes (RGB565 + A8), PNG without alpha and raw .rgb565 w*h*2",
+    "sprite_cap": "none; bounded by free PSRAM: PNG with alpha w*h*3 bytes (RGB565 + A8), PNG without alpha and raw .rgb565 w*h*2; live Sprite.image sprites of the same path share one buffer (lvgl_renderer.c image cache)",
     "transform_rule": "set_scale/set_rotation need BOTH w and h <= transform_max_px, else refused; set_pivot is not gated",
     "sprite_initially_hidden": "a new sprite stays hidden until its first set_pos or set_visible (lvgl_renderer.c sprite_apply_hidden)",
     "font_face": "a face is a (path, size) pair; faces referenced by a live Text cannot be evicted",
@@ -149,6 +183,8 @@ FACTS = {
 
 # Registered for firmware-internal hosts; documented but not for game code.
 INTERNAL = {"on_pack_cmd": "host command channel of built-in packs",
+            "on_pack_data": "pack data store channel of built-in packs",
+            "Pack.data": "pack data store channel of built-in packs",
             "Engine.stack_hwm": "firmware stack sizing probe"}
 A2A_ONLY = {"Engine.report_result": "talk-flow (A2A) sessions: reports the outcome string to the server"}
 
@@ -255,9 +291,12 @@ def derive(lim):
         "font_max_file_kib": (lim["font_max_file_bytes"] // 1024, "font_max_file_bytes in KiB"),
         "manifest_max_kib": (lim["manifest_max_bytes"] // 1024, "manifest_max_bytes in KiB"),
         "line_pool_kib": (lim["line_pool_max_bytes"] // 1024, "line_pool_max_bytes in KiB"),
-        "sandbox_rel_path_budget": (lim["sandbox_path_max"] - 1 - len(lim["games_root"]) - 2,
-                                    "sandbox_path_max - NUL - len(games_root) - 2 slashes; a relative path "
+        "sandbox_rel_path_budget": (lim["sandbox_path_max"] - 1 - max(len(lim["games_root"]), len(lim["todo_root"])) - 2,
+                                    "sandbox_path_max - NUL - len(longest pack root) - 2 slashes; a relative path "
                                     "may use this many bytes minus len(game_id)"),
+        "text_dedup_chars": (lim["text_dedup_max_len"] - 1, "cap minus NUL"),
+        "rank_result_max_bytes": (lim["rank_result_buf_max"] - 1, "cap minus NUL; longer is cut, then fails to parse"),
+        "servo_pose_busy_s": (lim["servo_pose_busy_ms"] / 1000, "servo_pose_busy_ms in s"),
         "sound_alias_chars": (lim["sound_alias_len_max"] - 1, "cap minus NUL"),
         "sound_path_chars": (lim["sound_path_len_max"] - 1, "cap minus NUL"),
         "sound_url_chars": (lim["sound_url_len_max"] - 1, "cap minus NUL"),
@@ -285,6 +324,11 @@ def build(fw):
     src = os.path.join(fw, "head_esp32", "components", "game_engine", "src")
     limits = {k: read_macro(src, rel, name) for k, rel, name in MACROS}
     limits.update({k: read_macro(fw, rel, name) for k, rel, name in FW_MACROS})
+    for key, rel, rx in FW_REGEX:
+        m = re.search(rx, read_text(fw, rel))
+        if not m:
+            raise KeyError(key + ": pattern not found in " + rel)
+        limits[key] = int(m.group(1))
     for key, rel, rx, mult in TELEMETRY:
         m = re.search(rx, read_text(src, rel))
         if not m:
@@ -319,6 +363,7 @@ def build(fw):
                    "source": {"macros": dict({k: "game_engine/src/" + rel + ":" + n for k, rel, n in MACROS},
                                              **{k: rel + ":" + n for k, rel, n in FW_MACROS}),
                               "telemetry": {k: "game_engine/src/" + rel for k, rel, _, _ in TELEMETRY},
+                              "firmware": {k: rel for k, rel, _ in FW_REGEX},
                               "sdkconfig": {k: s for k, s, _ in KCONFIG},
                               "button": button_src,
                               "lua_build": {"lua_maxccalls": slash(LUA_CMAKE) + ":LUAI_MAXCCALLS",
@@ -341,9 +386,6 @@ def outputs(fw):
     out = {os.path.join(SDK, "contract", "constraints.json"): cj,
            os.path.join(SDK, "contract", "api.json"): aj,
            os.path.join(SDK, "kit", "pika-constraints.js"): js}
-    # The SDK's Lua copy must build exactly like the robot's (LUA_USE_C89, LUAI_MAXCCALLS).
-    for name in LUA_MIRROR:
-        out[os.path.join(SDK, "lua-5.5.0", name)] = read_text(fw, os.path.join(os.path.dirname(LUA_CMAKE), name))
     with open(os.path.join(SDK, "contract", "semantics.json"), encoding="utf-8") as f:
         sem = json.load(f)
     for rel, text in render_docs.render_all(sem, api, constraints).items():

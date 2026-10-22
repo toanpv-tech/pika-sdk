@@ -8,7 +8,7 @@ Run every command from the SDK root.
 
 | ID | Stage | Owner | Input | Output | Gate |
 | --- | --- | --- | --- | --- | --- |
-| S0 | Set up | everyone, once | this SDK, Pika Studio | working tools | `smoke.py examples/pick_word` passes (below) |
+| S0 | Set up | everyone, once | this SDK, Pika Studio | working tools | `smoke.py test-packs/test_input` passes (below) |
 | S1 | Brief | game designer | an idea | a filled [brief](../templates/brief-template.md) | someone else can describe the game back from it |
 | S2 | Challenge the brief | AI + designer | the brief | answers to [prompt A](../templates/prompts.md#a-start-a-game-from-a-brief); mode chosen | designer agrees; mode is *demo first* or *Lua directly* |
 | S3 | Browser demo *(demo first only)* | designer + AI | the brief | kit demo, `pika-spec.json`, **To record** list | `playtest.js` then `check_spec.py` pass (below) |
@@ -31,7 +31,7 @@ python tools/smoke.py <pack> "<steps>"
 ```
 
 Pass: exit code 0 and a last line `0 error(s), N warning(s)`. For S0 use
-`examples/pick_word` without steps; it must print `0 error(s), 0 warning(s)`. Steps walk every
+`test-packs/test_input` without steps; it must print `0 error(s), 0 warning(s)`. Steps walk every
 branch (`left|right|enter|home`, `hold:<button>:<ms>`, `wait:<ms>`, `voice:<keyword>`,
 `restart`); the full list is at the top of `tools/smoke.py`. A game with several UI languages
 runs the gate once per language: add `--language vi` (default `en`, passed as

@@ -56,7 +56,7 @@ Without it, or if it cannot be decoded, the menu draws a tinted tile.
   },
 
   "servos": { "neck": "head", "torso": "base", "arm_l": "left", "arm_r": "right" },
-  "poses":  { "hello": "say_hi", "win": "cheer_jump", "sad": "system_error" }
+  "poses":  { "hello": "say_hi", "win": "cheer_jump", "sad": "admiring" }
 }
 ```
 
@@ -65,7 +65,7 @@ Without it, or if it cannot be decoded, the menu draws a tinted tile.
 | Field | Type | Required | Used by | Rule |
 | --- | --- | --- | --- | --- |
 | `main` | string | set it | engine, menu | Entry script, relative to the pack folder, at most {{manifest_main_chars}} bytes (longer is cut and then fails to load). The engine defaults to `scripts/main.lua`, but the menu's detail panel reports `NO_ENTRY` without it and `tools/smoke.py` treats it as an error. |
-| `version` | string | no | menu detail panel | Shown to the user. |
+| `version` | string | no | menu detail panel, telemetry | Shown to the user; sent as `pv` on `game.start` and every `game.tel` (first {{tel_pv_max}} bytes, unsafe characters replaced), so bump it on every publish. |
 | `name` | object `{ "vi", "en" }` (convention) or string | no | engine log (string only) | Pack convention: an object with a Vietnamese and an English title, as in the example and every SD pack. The engine reads `name` only when it is a string (at most {{manifest_name_chars}} bytes, longer is cut) and only for the `pack_load ok` log line, so an object logs `name=""`. The menu title comes from the server's game list, not from this field. |
 | `peripherals` | array of strings | no | engine, menu detail panel | See [peripherals](#peripherals). |
 | `input` | object | no | engine | See [input](#input). |
@@ -126,12 +126,16 @@ Each alias has exactly one source:
 
 `"loop": true` restarts the sound on completion; it never fires `REASON_COMPLETED`.
 
+A `path` that contains `/au/` is swapped for `/au/<language>_<name>` (e.g. `en_hit.mp3`) when the robot's language is not Vietnamese and that file exists; otherwise the original plays and the robot reports the missing file. Avoid an `au/` folder unless you ship the language variants.
+
+A `path` that contains `/au/` is swapped for `/au/<language>_<name>` (e.g. `en_hit.mp3`) when the robot's language is not Vietnamese and that file exists; otherwise the original plays and the robot reports the missing file. Avoid an `au/` folder unless you ship the language variants.
+
 | Rule | Limit |
 | --- | --- |
 | Aliases | at most {{sound_aliases_max}} |
 | Alias | 1..{{sound_alias_chars}} bytes, unique |
 | `path` | at most {{sound_path_chars}} bytes; no leading `/`, no `\`, no control character, no empty, `.` or `..` segment |
-| `url` | `http://` or `https://` (rewritten to `http://` with a warning), printable non-space ASCII, at most {{sound_url_chars}} bytes |
+| `url` | `http://` or `https://` (rewritten to `http://`; the log shows `downgraded=1`), printable non-space ASCII, at most {{sound_url_chars}} bytes |
 
 Rejected: `audio` or `audio.sounds` not an object, an entry that is not an object or has no
 source or two, a rule above broken, a missing `path` file, or **more than
@@ -150,7 +154,7 @@ no sounds.
 - `poses` maps an alias to a built-in gesture, used by `Servo.pose`: `default`, `poke`,
   `talk_random_v1`, `talk_random_v2`, `say_hi`, `raise_both`, `idle_talk_1`, `idle_talk_2`,
   `greeting`, `noaction`, `left_arm_rotate`, `open_menu`, `admiring`, `cheer_jump`,
-  `left_wave`, `system_error`.
+  `left_wave`. `system_error` is accepted by the engine but refused by the robot (counted in `Servo.stats().back_reject_validation`): do not use it.
 
 | Rule | Limit |
 | --- | --- |

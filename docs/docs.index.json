@@ -18,7 +18,7 @@
       "produces": [
         "working tools"
       ],
-      "gate": "python tools/smoke.py examples/pick_word -> 0 error(s), 0 warning(s)"
+      "gate": "python tools/smoke.py test-packs/test_input -> 0 error(s), 0 warning(s)"
     },
     {
       "file": "start/faq.md",

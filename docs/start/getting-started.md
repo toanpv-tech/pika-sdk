@@ -1,7 +1,7 @@
 # Getting started
 
-Install the tools, prove they work, and see one game in both forms it takes: a browser demo
-and a Lua pack. This is stage S0 of the [pipeline](../reference/pipeline.md). No C and no
+Install the tools, prove they work, and see the two forms a game takes: a browser demo and a
+Lua pack. This is stage S0 of the [pipeline](../reference/pipeline.md). No C and no
 firmware knowledge needed.
 
 ## 1. Install
@@ -18,20 +18,21 @@ firmware knowledge needed.
 From the SDK root:
 
 ```bash
-python tools/smoke.py examples/pick_word
+python tools/smoke.py test-packs/test_input
 ```
 
 Pass: the last line is `0 error(s), 0 warning(s)` and the exit code is 0. If it fails, fix
 the install before going further: every later stage relies on this tool.
 
-## 3. The same game, twice
+## 3. A demo and a pack
 
-`kit/template/index.html` is a browser demo; `examples/pick_word/` is the same game as a Lua
-pack. Reading them side by side once shows what "porting is transliteration" means.
+`kit/template/index.html` is a browser demo; `starters/minimal-game/` is the shape of a
+Lua pack. The packs in `test-packs/` each test one engine area on the robot (`test_input`,
+`test_speaker`, `test_text`, ...).
 
 - **Browser.** Open `kit/template/index.html` directly (`file://` works). Keys: `←`/`A`,
   `Enter`/`Space`, `→`/`D`, HOME `H`. The side panel shows the resource budget and live lints.
-- **Pika Studio.** Run **Pika: New Game from Example…**, pick `pick_word`, then **Pika: Run**.
+- **Pika Studio.** Run **Pika: New Game from Example…**, pick `test_input`, then **Pika: Run**.
   Keys: ENTER `Enter`/`Space`, LEFT `←`/`A`, RIGHT `→`/`D`. **Pika: Open Documentation**
   shows these pages inside Studio.
 

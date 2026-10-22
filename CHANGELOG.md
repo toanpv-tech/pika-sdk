@@ -20,6 +20,193 @@ Entries before 1.2.0 are in Vietnamese.
 
 ---
 
+## Unreleased
+
+Docs re-verified against the firmware on `dev` after audio v2 (3ec73958), `Telemetry.event`
+(9e898fdb) and ON/OFF-in-game (76d5ee41); the SDK becomes a Claude Code plugin marketplace
+with two plugins and the game agents; `test-packs/` becomes a set of single-feature robot test
+packs, one per public Lua global, and smoke.py models the calls they test the way the firmware
+does. An API, AI tools, examples, a library function, tools and checks were added and
+docs were corrected to match the engine; no API, hook, manifest key or limit changed or was removed.
+
+### Added
+
+- `test-packs/test_<global>` for every public global: `test_input`, `test_speaker`, `test_text`,
+  `test_sprite`, `test_anim`, `test_shape`, `test_led`, `test_servo`, `test_voice`,
+  `test_telemetry`, `test_ranking`, `test_timer`, `test_engine`. Each pack covers argument
+  guards, return values and failure values, timed behaviour, and on-screen or on-robot checks
+  the operator confirms (ENTER = right, RIGHT = wrong). UART lines read
+  `<tag> [NN/NN] PASS|FAIL|SKIP group :: case :: detail`. Rows that end the game are manual.
+  All use Nunito (OFL, `fonts/OFL.txt`).
+- `libs/testkit` `tk.suite(opts)`: three-button test menu, RUN SUITE / Reset rows, sync and
+  async tests under `pcall`, `S:look` operator checks, `manual`, `fullscreen`, `"skip"`, one
+  `Text` HUD. The earlier `expect` / `reg_sync` / `run_sync` functions are unchanged.
+- `test-packs/examples.index.json`: `covers` (globals and hooks a pack tests) and `needs`
+  (robot, operator, network, voice-server) per entry.
+- `tools/gen_tel_vectors.py`: builds `test-packs/test_telemetry/libs/tel_vectors.lua` from
+  `contract/telemetry_vectors.json`; `--check` reports drift.
+- `tools/check_docs.py` check 11: every public global has an `test-packs/test_<global>` pack that
+  lists it in `covers`; every pack's `libs/testkit.lua` equals `libraries/testkit.lua`;
+  `tel_vectors.lua` is up to date.
+- `.claude-plugin/marketplace.json` (`pika-sdk`): plugin `pika-game` for every game developer
+  (source: the SDK root, so agents read `knowledge/`, `tools/` and `contract/` at
+  `${CLAUDE_PLUGIN_ROOT}` and write packs in `games/<id>/` of any folder) and plugin
+  `pika-sdk-maintainer` for the Pika team (`plugins/pika-sdk-maintainer/`). Install with
+  `/plugin install pika-game --marketplace toanpv-tech/pika-sdk`.
+- `agents/pika-game-tester.md`: independent tester; branch-covering smoke runs per UI
+  language, serial log scoring, PASS / FAIL / BLOCKED with a JSON block; never edits the pack.
+- `agents/pika-game-cleaner.md` (clean-code agent): walks `knowledge/review-checklist.md` in mode `light` or `full`,
+  applies only behaviour-preserving fixes, defers the rest; reruns smoke.
+- `agents/pika-game-optimizer.md`: works from a robot log; classifies the symptom, applies the
+  `knowledge/frame-budget.md` patterns in cut order without changing gameplay, marks each change
+  `-- perf:`, proves logic with smoke and asks for a new robot log; BLOCKED without a log.
+  The porter no longer diagnoses robot logs.
+- `knowledge/review-checklist.md` REVIEW-PERF-MARK: measured optimizations carry `-- perf:`, and a
+  cleanup keeps their shape.
+- Performance lessons from the team's shipped packs, each checked against the engine source:
+  `knowledge/performance.md` PERF-COUNT (factory calls per hook; `Sprite.image` of a path a live
+  sprite uses shares its pixels, `Sprite.new` always reads), PERF-RESTACK (a changed `set_z` /
+  `to_front` / Shape line repaints the whole screen), PERF-PIXELS (`set_opacity` is never
+  compared; fewer changed pixels per frame), PERF-FILES (every pack file is checked at launch),
+  lazy creation with its two traps, pools by file and the PSRAM peak across scenes;
+  `knowledge/frame-budget.md` BUDGET-SCENE, per-scene tick timing and a symptoms-to-patterns table;
+  `knowledge/pitfalls.md` P36 (`set_z` clamp and runs of objects sent to one position).
+- `evals/agent-cleaner-routes`, `evals/agent-tester-routes`: scaffolded with a small pack that
+  has deliberate clean-code findings (`fixture.sh`, run with `--scaffold`).
+- `skills/pika-test` (`/pika-test`): runs the tester on a pack and an optional log.
+  `skills/pika-engine`: answers Pika Engine questions from the SDK instead of memory.
+- `plugins/pika-sdk-maintainer/skills/pika-sdk-release` (`/pika-sdk-release`): the release
+  gates and one version for `sdk_version`, `sdk.index.json` and both plugins.
+- `tools/check_robot_log.py`: scores a robot or Pika Studio serial log against the release
+  checklist's telemetry gates (FAIL on hard rules, WARN on heuristics, INCONCLUSIVE when the
+  log cannot decide; exit 0 / 1 / 3).
+- `tools/check_docs.py` check 13: plugin versions equal `sdk_version`; agent and skill names
+  match their files; adapters name no engine API; every SDK path they quote exists.
+- `evals/`: `claude plugin eval` cases for the tester, cleaner, log scoring, engine facts and a
+  negative generic-Lua case. `.githooks/pre-commit`: plugin validate, contract and docs checks.
+- `agents/pika-game-porter.md`: ports a brief (art + design doc + a demo, kit-based or
+  not) to `games/<id>/`, stopping after intake, fit and budget for approval; diagnoses robot
+  frame drops; costs engagement ideas. Workflow only, like `pika-game-maker`.
+- `knowledge/port-from-brief.md` (BRIEF-*): inventory, parity table, scale factor, layout tables
+  with the longest string, control mapping, approval stop, missing API reported to the Pika team.
+- `knowledge/frame-budget.md` (BUDGET-*): planned-vs-measured worksheet mapped to limit keys and
+  telemetry fields, cut order, robot-log diagnosis steps, verdict.
+- `knowledge/juice.md` (JUICE-*): costed engagement backlog; servo duty, LED range and one sound
+  channel as the limits of robot reactions.
+- `knowledge/review-checklist.md` (REVIEW-*): hand-over review, each engine rule linked to its owner.
+- `knowledge/performance.md`: allocation-free per-frame code.
+- Load values `on_brief`, `on_budget`, `on_juice`, `on_review` in `knowledge/skill.index.json` and
+  the `knowledge/SKILL.md` load table.
+- `Telemetry.event` / `Telemetry.caps`, `libs/tel` (listed in the library catalog and README),
+  `contract/telemetry_vectors.json` and `tools/check_telemetry.py`.
+- New contract keys read from firmware: body-board servo clamps and duty limit
+  (`servo_*`), `button_click_debounce_ms`, `show_hold_max_s`, `exit_defer_ms`,
+  `text_dedup_max_len`, `tel_pv_max`, `servo_pose_busy_ms`, `rank_result_buf_max`, `todo_root`.
+- Known issues KI-SOUND-QUEUE, KI-STOPALL-PLAY, KI-SOUND-CUT; PC-vs-robot rows PC-SOUND and
+  PC-STUB.
+
+### Changed
+
+- `skill/` renamed to `knowledge/` so it is not confused with `skills/` (Claude Code
+  commands); `sdk.index.json` section `knowledge`. File names inside are unchanged.
+- `AGENTS.md` (with `CLAUDE.md` importing it) at the root: where an AI assistant starts, which
+  files are generated, and the check commands.
+- `examples/` renamed to `test-packs/`: the packs test one API each and are not game examples.
+  `sdk.index.json` keeps the section key `examples` and `test-packs/examples.index.json`, which
+  Pika Studio reads.
+- `knowledge/templates/` moved to `starters/` (new `sdk.index.json` section `starters`), the
+  game skeletons to copy into `games/<id>/`.
+- smoke.py follows the firmware where it used to simplify (each change cites its binding):
+  - methods on a value that is not that kind of handle raise; Text and Shape support `<close>`;
+  - Sprite: integer and number arguments are checked, `set_pivot` outside -480..960 x -320..640
+    returns `false`, `Sprite.new` with a size of 0 returns `nil`, `Sprite.solid` needs its
+    colour, a destroyed sprite reads 0, 0 and its boolean calls return `false`;
+  - Text: `str`, `where` and `path` follow `luaL_checkstring`, `set_color` needs an integer,
+    a destroyed label returns `nil, msg` from `align` / `set_font`;
+  - Shape: coordinate range, strict style table, bbox (pad 4 + half the width) and the 256 KiB
+    raster budget, `set_points` / `set_style` return nothing on success and `nil, reason` on a
+    refusal;
+  - Anim: extension checked before the path, a file that is not a GIF / JPEG returns `nil`,
+    `play(1)` is a one-shot, MJPEG ends after one engine frame per JPEG;
+  - Led: non-number arguments return `false`, `is_available` is `false` before the game runs,
+    `get_brightness` mirrors `set_brightness` (rounded), the 8-slot ring with set() merging,
+    `Led.stats`;
+  - Servo: angle, duration and easing checks, `body` maps to the base joint, `is_busy`
+    predictions, the 32-slot ring with move merging, `Servo.stats` (body-board rejects stay 0);
+  - Speaker: `set_volume` / `get_volume`, `played_total` and `cooldown_reject` counters, every
+    `Speaker.stats` field;
+  - Engine: `report_result` raises on a non-table and rejects an empty or over-255-byte event,
+    `Engine.show` holds and releases the loading screen like the engine;
+  - Ranking: a numeric-string score is accepted.
+- The S0 gate is `python tools/smoke.py test-packs/test_input`.
+- `docs/guides/port-a-demo.md`, `design-a-demo.md`, `getting-started.md` and `knowledge/porting.md`
+  pair the kit demo with `starters/minimal-game/`.
+- `knowledge/SKILL.md`: mode C covers a brief as well as a kit demo; mode D links frame-drop
+  diagnosis; an engagement route; the self-check starts with the review checklist.
+- `knowledge/porting.md`: a demo not built on the kit goes through `port-from-brief.md`.
+- `/pika-game` runs the loop: maker or porter builds, cleaner `light`, tester; FAIL returns to
+  the builder (three rounds at most); PASS → cleaner `full` → tester regression.
+- `.claude/agents/` and `.claude/skills/` moved to `agents/` and `skills/` (plugin layout); the
+  adapters now work from the installed plugin in any folder, not only inside an SDK clone.
+- `MAINTAINING.md`: plugin layout, roles, decision rights and how to add an agent.
+- `README.md`, `docs/start/faq.md`: install the plugin instead of opening the SDK folder.
+
+### Removed
+
+- `lua-5.5.0/`: nothing in the SDK built or read it (smoke.py runs lupa; Pika Studio and the
+  firmware build `head_esp32/components/lua-5.5.0`). `tools/gen_contract.py` still reads the
+  robot's Lua build flags from the firmware into the contract.
+- `test-packs/pick_word`, `test_button`, `test_audio`, `test_font` (replaced by the packs above).
+
+### Fixed (tools)
+
+- `smoke.py` and `smoke_stub.lua` give a pack without `input.actions` the engine's default
+  actions (`confirm`, `left`, `right`) instead of reporting `error ACTION`.
+
+### Fixed (documented behaviour that was wrong)
+
+- **Speaker:** a new `Speaker.play` does not cut the playing game sound; it is queued behind it
+  while the old alias is already reported `REASON_PREEMPTED` (KI-SOUND-QUEUE, seen on a robot;
+  the audio engine behaved the same before audio v2). `stop_all` stops
+  game sounds only and is sent at frame end. Sounds cut by the robot get no `on_sound_end`.
+  `is_busy` = any audio request active, filler and conversation streaming excluded.
+- **Exits:** ON/OFF ends a game (`end=home`, `game_end` runs) and the robot sleeps. HOME in
+  talk-flow ends the game without `on_home`. A short HOME that `on_home` does not keep logs
+  `end=norm`; an error in `on_home` logs `end=err`. A HOME press within the click debounce of
+  another click is ignored. `game_end` also runs when a launch is cancelled after `game_start`.
+- **Engine:** `Engine.exit` freezes the screen on the last published frame and must not be
+  called from the top level or `game_start`; `Engine.show()` takes effect at the end of the next
+  frame. `params.is_a2a` is also `true` for to-do journey packs. Pack paths are prefixed with
+  the pack root (`/sd/games` or `/sd/to-do`).
+- **Sprite:** same-path `Sprite.image` sprites share one pixel buffer; `set_pivot` refuses
+  out-of-range values; the transform-refusal log text; PC-STRIP (alpha PNG sprites are refused by
+  `set_frame`).
+- **Servo:** `Servo.stop` returns the joint to its rest angle; the robot clamps angle and
+  duration and throttles motion; `system_error` is refused by the robot (removed from the
+  manifest example).
+- **Voice:** a second `set_keywords` while connecting replaces the pending list; talk-flow
+  forwards every list and `Voice.stop` does nothing there; a fractional `sensitivity` is sent as
+  0; the `keywords_configured` server frame is documented.
+- **Telemetry:** `game.start` `trigger=todo` and `pv`; `game.stop` `tel`, `tel_us_max`,
+  `tel_off`; `game.tel` serial lines; `Telemetry.event` fail and bad-argument lists, held calls
+  from the top level, event envelope (`ev`). Manifest `version` is sent as `pv`.
+- **Ranking:** numeric-string scores are accepted; `false` only when encoding fails; result
+  depth and size caps; a late result is returned to the next game.
+- Font-face budget in examples and recipes is 8 faces, not 4; stale firmware line citations
+  updated across `contract/semantics.json`, `knowledge/` and `open-questions.md`.
+
+### Docs
+
+- KI PC-STUB lists what smoke.py still simplifies: one action per button, sorted
+  `Input.actions()`, tables as handles, no body-board servo rejects, no ranking result, zero
+  error / send-fail counters.
+- `Anim:play`: a paused Anim is still the active one, so another Anim's `play` rewinds it and
+  its `:resume` does nothing; `a:play(1)` plays once.
+- `Servo.stop`: a call from `game_end` is never sent (teardown wipes the queue); the robot
+  returns the joints to rest itself.
+
+---
+
 ## 2.0.0 — 2026-09-30
 
 Every document was re-verified against the firmware source. The API behaviour is now written

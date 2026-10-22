@@ -4,17 +4,17 @@
 
 Every global, function, method, constant and hook the Pika Engine exposes to a game pack, with its behaviour on bad input and on failure. **A name that is not on this page does not exist on the robot.** Machine-readable sources: `contract/api.json` (names, generated from the firmware), `contract/semantics.json` (behaviour), `contract/constraints.json` (numbers). Firmware surprises and PC-vs-robot differences: [Known issues](known-issues.md). The manifest: [manifest.json](manifest.md).
 
-**Contents:** [Conventions](#conventions) · [Hooks](#hooks) · [Engine](#engine) · [Timer](#timer) · [print](#print) · [Input](#input) · [Sprite](#sprite) · [Text](#text) · [Shape](#shape) · [Anim](#anim) · [Speaker](#speaker) · [Servo](#servo) · [Led](#led) · [Voice](#voice) · [Ranking](#ranking) · [Sandbox](#sandbox) · [Limits](#limits)
+**Contents:** [Conventions](#conventions) · [Hooks](#hooks) · [Engine](#engine) · [Timer](#timer) · [print](#print) · [Input](#input) · [Sprite](#sprite) · [Text](#text) · [Shape](#shape) · [Anim](#anim) · [Speaker](#speaker) · [Servo](#servo) · [Led](#led) · [Voice](#voice) · [Ranking](#ranking) · [Pack](#pack) · [Telemetry](#telemetry) · [Sandbox](#sandbox) · [Limits](#limits)
 
 ## Conventions
 
 - **Failure modes.** Each call fails in one of these ways, shown in the *Bad argument* and *Failure* columns: **raise** (throws a Lua error; uncaught it aborts the hook, see [Hooks](#hooks) for what that does), **false** (returns `false`), **nil, reason** (returns `nil` and a string; test the first value), **no-op** (does nothing).
-- **Families.** Display and input (`Sprite`, `Text`, `Shape`, `Anim`, `Input`) raise on a wrong argument type. Robot peripherals (`Speaker`, `Servo`, `Led`) never raise: a bad argument returns `false`. `Voice.set_keywords` raises on a non-table list. Status calls (`Timer`, `Ranking`, `Engine`, `print`) validate little.
+- **Families.** Display and input (`Sprite`, `Text`, `Shape`, `Anim`, `Input`) raise on a wrong argument type. Robot peripherals (`Speaker`, `Servo`, `Led`) never raise: a bad argument returns `false`. `Voice.set_keywords` raises on a non-table list. Status calls (`Timer`, `Ranking`, `Engine`, `print`) validate little. `Telemetry.event` never raises: every failure returns `false`.
 - **Integers.** Arguments documented as integers (`x`, `y`, `w`, `h`, `z`, frame index, Shape coordinates, scale, rotation) raise `number has no integer representation` on a fractional number. `2.0` is accepted. Round with `math.floor(x + 0.5)`.
 - **Integers are 32-bit on the robot** (`LUA_USE_C89`): `math.maxinteger` is 2^31−1 and integer overflow wraps. Floats are doubles.
 - **Handles.** `Sprite`, `Text`, `Shape` and `Anim` are userdata; call methods with a colon (`spr:set_pos(x, y)`). `:destroy()` is idempotent; after it every method is a no-op (getters return zeros, boolean methods `false`). Text and Shape no-ops log a warning; Sprite and Anim no-ops are silent.
 - **Keep a reference to every handle.** Handles have `__gc`: a Sprite, Text, Shape or Anim that no Lua variable references is destroyed at the next garbage collection and disappears from the screen. A dropped Text or Shape keeps its pool slot until then. Handles also support `<close>`. Everything is freed when the game ends.
-- **Paths** are relative to the pack folder. The engine prefixes `/sd/games/<game_id>/`; the whole path must stay under 200 bytes, so a relative path may use at most 188 bytes minus the length of the game id. An absolute path, a backslash, a control character, or an empty, `.` or `..` segment (`a//b`, trailing `/`) raises `unsafe ... path`.
+- **Paths** are relative to the pack folder. The engine prefixes `<pack root>/<game_id>/` (`/sd/games`, or `/sd/to-do` for built-in activity packs); the whole path must stay under 200 bytes, so a relative path may use at most 188 bytes minus the length of the game id. An absolute path, a backslash, a control character, or an empty, `.` or `..` segment (`a//b`, trailing `/`) raises `unsafe ... path`.
 - **Colours.** `Text` and `Shape` take `0xRRGGBB`. `Sprite.solid` takes 16-bit RGB565. Mixing them gives wrong colours, not an error.
 - **Reading an unknown field** of an engine global or handle gives `nil` (feature detection works); calling it raises. `pika` is an empty global table.
 
@@ -28,17 +28,18 @@ Define hooks as globals in the entry script; all are optional. Each call runs un
 | `on_tick(dt_ms)` | Every frame. | `dt_ms`: always 33 (nominal), see [Timing](#timing). | **once**, right after the top level runs | Game ends. |
 | `on_input(action, phase, hold_ms)` | Once per button event per action bound to that button, before `on_tick` of the same frame. | `action`: manifest action name; `phase`: `Input.PRESS`, `Input.RELEASE` or `Input.REPEAT`; `hold_ms`: integer. | **once**, right after the top level runs | Game ends. |
 | `on_input_lost(count)` | Button events were dropped because the input queue (32 events) overflowed. | `count`: events lost since the last report. | looked up at call | Game ends. |
-| `on_sound_end(alias, reason)` | At the start of the frame after a sound finished, was stopped or was preempted. | `alias`: string; `reason`: `Speaker.REASON_*`. | looked up at call | Game ends. |
+| `on_sound_end(alias, reason)` | At the start of the frame after a game sound finished, failed, was stopped by the game or was replaced by a newer play. A sound cut by the robot itself (system stop, urgent robot audio) gets no event ([KI-SOUND-CUT](known-issues.md#ki-sound-cut)). | `alias`: string; `reason`: `Speaker.REASON_*`. | looked up at call | Game ends. |
 | `on_sound_lost(count)` | `on_sound_end` events were dropped because the finish queue (8 events) overflowed. | `count`: events lost since the last report. | looked up at call | Game ends. |
 | `on_voice_event(e)` | Between frames, for each voice frame (see [Voice](#voice)). | `e`: table, or the raw JSON string when the frame is not valid JSON or exceeds 8 levels / 256 nodes. | looked up at call | Logged; the game continues (the session still reports `end=err`). |
-| `on_home()` | Between frames, on a short press of HOME. | none. Return a truthy value to keep the game running (e.g. to open a pause screen). | looked up at call | Game ends (clean exit). `nil`, `false` or a missing hook also end it. |
-| `game_end()` | Once during teardown, however a started game ends (not after a failed load). Runs after `game.stop` is logged. | none | looked up at call | Ignored. |
-| `on_pack_cmd(cmd)` | **Internal, not for game code.** Host command channel of built-in packs. |  | looked up at call | Ignored. |
+| `on_home()` | Between frames, on a short press of HOME, in a game started from the menu. In talk-flow HOME ends the game without calling `on_home`. | none. Return a truthy value to keep the game running (e.g. to open a pause screen). | looked up at call | Game ends; the body board sees a normal exit, but `game.stop` reports `end=err`. `nil`, `false` or a missing hook end it with `end=norm`. |
+| `game_end()` | Once during teardown, whenever `game_start` succeeded, including a launch cancelled before the game screen came up (then there is no `game.stop`). Not after a failed load. When `game.stop` is logged, it runs after it. | none | looked up at call | Ignored. |
+| `on_pack_cmd(cmd)` | **Internal, not for game code.** Host command channel of built-in packs. | `cmd`: table decoded from the JSON frame, or the raw string. | looked up at call | Logged; the game continues (the session still reports `end=err`). |
+| `on_pack_data(key, version)` | **Internal, not for game code.** Between frames, when the body board stored a new version of a pack data document while the game runs. | `key`: string. `version`: integer (CRC32 of the document). Read the document with `Pack.data(key)`. | looked up at call | Logged; the game continues (the session still reports `end=err`). |
 
 - **Define `on_tick` and `on_input` at the top level of the entry script.** They are bound once, before `game_start` runs; assigning them later (`on_tick = play_tick` inside `game_start` or a scene change) is silently ignored. Switch behaviour with a state variable inside one `on_tick`. Other hooks are looked up at every call.
-- **Frame order.** Each frame: `on_sound_end`/`on_sound_lost` → `on_input`/`on_input_lost` → `on_tick` → queued servo, LED and sound-stop commands are sent → the active `Anim` advances at most one frame → all display changes are published as one screen update. `on_voice_event` and `on_home` run between frames.
+- **Frame order.** Each frame: `on_sound_end`/`on_sound_lost` → `on_input`/`on_input_lost` → `on_tick` → queued servo, LED and sound-stop commands are sent → the active `Anim` advances at most one frame → all display changes are published as one screen update → queued `Telemetry.event` messages are sent. `on_voice_event` and `on_home` run between frames.
 - **The display lock is held for the whole tick.** Everything from the sound drain to the screen publish runs under the LVGL lock, so an SD read (`set_frame`), a PNG decode or a long Lua loop in a hook also freezes screen refresh for that time.
-- **HOME held for 1500 ms or longer force-exits** the game whatever `on_home` returns (`end=home`). Only short presses reach `on_home`.
+- **HOME held for 1500 ms or longer, the ON/OFF button, a sleep command from the server or a lost voice connection end the game** whatever `on_home` returns (`end=home`); `game_end` still runs. ON/OFF also puts the robot to sleep. Only a short HOME press in a menu game reaches `on_home`. A HOME press within 300 ms of any other button click is ignored.
 
 ### params
 
@@ -46,7 +47,7 @@ Define hooks as globals in the entry script; all are optional. Each call runs un
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `is_a2a` | boolean | `true` when the game was started inside a talk-flow (A2A) session. |
+| `is_a2a` | boolean | `true` when the game was started from a conversation: a talk-flow (A2A) session or the to-do journey. |
 | `language` | string | ISO 639-1 code of the robot's UI language, e.g. `"en"`. |
 | other fields | any | Start parameters from the server, decoded from JSON: at most 127 bytes and 32 nodes. Longer, malformed or non-object parameters give an empty table plus the two fields above. |
 
@@ -59,8 +60,9 @@ Define hooks as globals in the entry script; all are optional. Each call runs un
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
-| `Engine.exit([reason])` | nothing | raise if `reason` is not a string or number | — | Schedules a normal stop; the current hook runs to its end, so `return` right after the call. `game_end()` runs during teardown. `reason` (default `"lua"`) is logged. |
+| `Engine.exit([reason])` | nothing | raise if `reason` is not a string or number | — | Schedules a normal stop; the current hook runs to its end, so `return` right after the call. The screen freezes on the last frame published before the call: draw an end screen in an earlier frame. `on_tick` stops; `on_voice_event` may still run for up to 1500 ms. `game_end()` runs during teardown. `reason` (default `"lua"`) is logged. Do not call it from the top level or `game_start`: the launch is cancelled without a result and the robot waits for its loading timeout. |
 | `Engine.report_result{event = s}` | `true` | raise if the argument is not a table | nil, reason: `bad_event` (missing, empty or over 255 bytes), `encode_failed`, `payload_too_big`, `send_failed` | **Talk-flow (A2A) only** (`params.is_a2a`). Hands the outcome string (e.g. `"win"`) to the conversation, which receives it when the game ends. Does not end the game. Outside talk-flow nothing uses it. |
+| `Engine.show([visible])` | `true` if the call changed anything, else `false` | — | — | `Engine.show(false)` in `game_start` keeps the robot's loading animation on screen past start while every hook keeps running; once the game screen is up it is too late (`false`). `Engine.show()` then puts the game screen up at the end of the next frame, so a screen built from a later `on_pack_cmd` appears in one piece. Without that call the screen goes up anyway 3 s after start. Older firmware has no `Engine.show`: guard with `if Engine.show then`. |
 | `Engine.stack_hwm()` | integer | — | — | **Internal, not for game code.** Firmware stack sizing probe. |
 
 ## Timer
@@ -77,7 +79,7 @@ Define hooks as globals in the entry script; all are optional. Each call runs un
 
 ## Input
 
-Buttons are addressed by the action names declared in `manifest.json` (`input.actions`). Without that block the engine defines `confirm` (enter), `left` and `right`. The robot has three game buttons: `button:left`, `button:enter`, `button:right`. HOME is not an action; it calls `on_home()`.
+Buttons are addressed by the action names declared in `manifest.json` (`input.actions`). Without that block the engine defines `confirm` (enter), `left` and `right`. The robot has three game buttons: `button:left`, `button:enter`, `button:right`. HOME is not an action; it calls `on_home()`. ON/OFF is not an action and never reaches the game: a short press during a game ends it (`end=home`, `game_end` runs), during loading it cancels the launch, and either way the robot goes to sleep.
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
@@ -98,7 +100,7 @@ Compare `phase` with the constants, not with numbers.
 
 ## Sprite
 
-Images on the 480 × 320 screen. There is no sprite count limit; free PSRAM is the limit. PSRAM per sprite: `w*h*3` bytes for a PNG that can carry transparency (RGBA, grey+alpha, or any PNG with a `tRNS` chunk; RGB565 plus an 8-bit alpha plane), `w*h*2` for a PNG without alpha (RGB, grey or palette without `tRNS`), a raw `.rgb565` file or a solid. The engine decides from the PNG header, so an RGBA PNG whose alpha is always 255 still costs `w*h*3`: export opaque images as RGB PNG or `.rgb565`. While a PNG decodes, the whole file is also held in PSRAM.
+Images on the 480 × 320 screen. There is no sprite count limit; free PSRAM is the limit. PSRAM per sprite: `w*h*3` bytes for a PNG that can carry transparency (RGBA, grey+alpha, or any PNG with a `tRNS` chunk; RGB565 plus an 8-bit alpha plane), `w*h*2` for a PNG without alpha (RGB, grey or palette without `tRNS`), a raw `.rgb565` file or a solid. The engine decides from the PNG header, so an RGBA PNG whose alpha is always 255 still costs `w*h*3`: export opaque images as RGB PNG or `.rgb565`. While a PNG decodes, the whole file is also held in PSRAM. `Sprite.image` of a path that a live sprite already uses shares its pixels: no extra PSRAM and no decode. `set_frame` or `set_flip` on such a sprite first takes a private copy (`false` if PSRAM runs out).
 
 A new sprite is placed at (0, 0) on top of everything created before it, but **stays hidden until its first `:set_pos` or `:set_visible`**. A sprite you never position is never drawn.
 
@@ -116,17 +118,17 @@ A new sprite is placed at (0, 0) on top of everything created before it, but **s
 | `spr:to_front()` | nothing | raise | — | Same as the highest index. |
 | `spr:to_back()` | nothing | raise | — | Same as index 0. |
 | `spr:set_flip(h, v)` | boolean | raise | `false` | Sets the absolute flip state (not a toggle) by rewriting every pixel (O(w·h)), and only when the state differs from the recorded one. Call it on state changes, not every frame. **Do not combine with `set_frame`** ([KI-FLIP-FRAME](known-issues.md#ki-flip-frame)). |
-| `spr:set_frame(path, i)` | boolean | raise on unsafe path or non-integer `i` | `false` when the file is missing or `i` is past the end | Overwrites the pixels with frame `i` (0-based) of a **raw strip file**: frames stored back to back in the sprite's own pixel format, `w*h*2` bytes per frame for `Sprite.new`, `Sprite.solid` and an opaque PNG sprite, `w*h*3` for a PNG sprite with alpha. Never a PNG file: a PNG path is read as raw bytes and shows garbage. Reads the SD card on every call, under the display lock. |
+| `spr:set_frame(path, i)` | boolean | raise on unsafe path or non-integer `i` | `false` when the file is missing, `i` is past the end, or the sprite is a PNG with alpha | Overwrites the pixels with frame `i` (0-based) of a **raw strip file**: RGB565 frames stored back to back, `w*h*2` bytes each, on a `Sprite.new`, `Sprite.solid` or opaque PNG sprite. An alpha PNG sprite is refused (log `set_frame refused reason=alpha_sprite`, once per sprite): its format follows the PNG header, so a re-export would change the frame size. Never a PNG file: a PNG path is read as raw bytes and shows garbage. Reads the SD card on every call, under the display lock. |
 | `spr:set_scale(n)` | boolean | raise on non-integer | `false` when the sprite is too large to transform | `256` = 1×, `512` = 2×, `128` = ½×. Clamped to 1..4096, then to `480*256 / max(w, h)` so the scaled sprite fits the screen width. See [Transform limit](#transform-limit). |
 | `spr:set_rotation(deg10)` | boolean | raise on non-integer | `false` when the sprite is too large to transform | Tenths of a degree (`900` = 90°), wraps modulo 3600. |
-| `spr:set_pivot(x, y)` | boolean | raise on non-integer | — | Origin of scale and rotation in sprite-local pixels; default is the centre. Not size-checked, but has no effect on a sprite that cannot be transformed. |
+| `spr:set_pivot(x, y)` | boolean | raise on non-integer | `false` when `x` is outside −480..960 or `y` outside −320..640 | Origin of scale and rotation in sprite-local pixels; default is the centre. No effect on a sprite that cannot be transformed. |
 | `spr:hit_test(x, y)` | boolean | raise | — | Point inside `[x, x+w) × [y, y+h)`. Ignores visibility, scale and rotation. |
 | `spr:intersects(other)` | boolean | raise if `other` is not a sprite | — | Axis-aligned rectangles overlap. Same rules as `:hit_test`. |
-| `spr:destroy()` | nothing | — | — | Frees the pixels now. Idempotent. |
+| `spr:destroy()` | nothing | — | — | Releases the pixels now (freed when no other sprite of the same image uses them). Idempotent. |
 
 ### Transform limit
 
-`:set_scale` and `:set_rotation` work only when **both** the sprite's width and height are at most 96 px (`transform_max_px`). Larger sprites return `false`, nothing changes, and the refusal is logged once per sprite: `set_scale refused: sprite WxH exceeds 96 px transform limit`. Transforms are applied at draw time and cost CPU every frame the sprite is drawn: use them for short effects.
+`:set_scale` and `:set_rotation` work only when **both** the sprite's width and height are at most 96 px (`transform_max_px`). Larger sprites return `false`, nothing changes, and the first refusal is logged once per sprite: `sprite_xform refused op=set_scale w=W h=H max=96` (`op=set_rotation` for a rotation). Transforms are applied at draw time and cost CPU every frame the sprite is drawn: use them for short effects.
 
 ## Text
 
@@ -135,7 +137,7 @@ Retained text labels. At most 8 exist at a time (`text_slots`). Text does not wr
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
 | `Text.new(str, x, y)` | text | raise on non-string `str` or non-integer `x`/`y` | nil, `"pool_full"` (8 labels live, or out of memory) or `"text_create_failed"` | Shown immediately, top-left at (x, y), white, default font. |
-| `t:set(str)` | nothing | raise on non-string | no-op on a destroyed label | Changes the text. A string under 64 bytes that equals the current one is skipped by the engine; the cost left is building the string in Lua. |
+| `t:set(str)` | nothing | raise on non-string | no-op on a destroyed label | Changes the text. A string of at most 63 bytes that equals the current one is skipped by the engine; the cost left is building the string in Lua. |
 | `t:move(x, y)` | nothing | raise on non-integer | no-op | Absolute top-left position. |
 | `t:align(where[, dx, dy])` | nothing | raise on non-string `where` | nil, `"unknown Text align: ..."` or `"stale_text"` | Aligns to the screen. `where`: `center`, `top`, `bottom`, `left`, `right`, `top_left`, `top_right`, `bottom_left`, `bottom_right`; `dx`, `dy` offset in px (default 0). |
 | `t:set_font(path[, size])` | nothing | raise on non-string `path` | nil, msg: unsafe path, bad file, stale label, or font cache full | TrueType font from the pack, file at most 512 KiB. `size` in px, default 16, clamped to 8..96. See [Fonts](#fonts). |
@@ -145,7 +147,7 @@ Retained text labels. At most 8 exist at a time (`text_slots`). Text does not wr
 
 ### Fonts
 
-A face is a (path, size) pair. The engine caches at most 4 faces; labels using the same pair share one. A face used by a live label cannot be evicted, so a fifth distinct pair fails until a label using another face is destroyed or switched. Ship every font the pack uses; the default font does not cover every script.
+A face is a (path, size) pair. The engine caches at most 8 faces; labels using the same pair share one. A face used by a live label cannot be evicted, so one more distinct pair fails until a label using another face is destroyed or switched. Ship every font the pack uses; the default font does not cover every script.
 
 Text has no `set_z`. Its stacking is its creation order, changed only when other objects call `:set_z`, `:to_front` or `:to_back`. Create labels last to keep them on top.
 
@@ -188,7 +190,7 @@ Plays a GIF or MJPEG file (`.gif`, `.mjpeg`, `.mjpg`, case-insensitive). Several
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
 | `Anim.new(path)` | anim | raise on unknown extension or unsafe path | nil, msg | Loads the file (at most 4 MiB) and creates the canvas; frame size at most 480 × 320. Stops nothing. The canvas is hidden at (0, 0) until `:play`, `:set_pos` or `:set_visible`. |
-| `a:play([loop])` | boolean | raise if `a` is not an anim | `false` on a decode error | `a:play()` plays once; `a:play(true)` or `a:play{loop = true}` loops. Stops (and rewinds) any other playing Anim, shows the canvas and draws a frame at once. Rewinds to the first frame only if this Anim had ended (a finished one-shot or after `:stop`); on a paused or playing Anim it continues from the current frame. |
+| `a:play([loop])` | boolean | raise if `a` is not an anim | `false` on a decode error | `a:play()` plays once; `a:play(true)` or `a:play{loop = true}` loops. Stops (and rewinds) any other playing Anim, shows the canvas and draws a frame at once. Rewinds to the first frame only if this Anim had ended (a finished one-shot or after `:stop`); on a paused or playing Anim it continues from the current frame. A paused Anim is still the active one: another Anim's `play` stops and rewinds it, and its `:resume` then does nothing. Only a boolean or a table is read, so `a:play(1)` plays once. |
 | `a:pause()` | nothing | raise | no-op | Freezes on the current frame. |
 | `a:resume()` | nothing | raise | no-op | Continues after `:pause`; stops any other playing Anim. |
 | `a:stop()` | nothing | raise | no-op | Stops and rewinds; the last frame stays on screen until hidden. |
@@ -201,28 +203,28 @@ The engine advances the playing Anim by at most one frame per engine frame, so i
 
 ## Speaker
 
-Sounds are aliases declared in `manifest.json` (`audio.sounds`). There is **one channel**: a new `Speaker.play` preempts the current sound, which then receives `on_sound_end(alias, Speaker.REASON_PREEMPTED)`. There is no text-to-speech; every spoken line is a recorded file.
+Sounds are aliases declared in `manifest.json` (`audio.sounds`). There is **one channel**. A new `Speaker.play` makes the new alias current and sends `on_sound_end(old, Speaker.REASON_PREEMPTED)`, but the old clip keeps playing to its end and the new one starts after it ([KI-SOUND-QUEUE](known-issues.md#ki-sound-queue)). To cut the old sound, call `Speaker.stop(old)` before `Speaker.play(new)`. There is no text-to-speech; every spoken line is a recorded file.
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
-| `Speaker.play(alias)` | boolean | `false` | `false`: unknown alias, remote alias without a URL yet, within 150 ms of the previous play (`cooldown_reject`), or audio request refused | The automatic restart of a looping sound counts as a play for the cooldown. |
+| `Speaker.play(alias)` | boolean | `false` | `false`: unknown alias, remote alias without a URL yet, within 150 ms of the previous play (`cooldown_reject`), or audio request refused | The automatic restart of a looping sound counts as a play for the cooldown. `true` means the request was posted; a play refused later by a full robot audio queue sends no `on_sound_end` ([KI-SOUND-CUT](known-issues.md#ki-sound-cut)). |
 | `Speaker.stop(alias)` | boolean | `false` | `false` if `alias` is not the sound currently playing | `on_sound_end(alias, Speaker.REASON_STOPPED)` arrives at the start of the **next** frame, also when called from inside `on_sound_end`. |
-| `Speaker.stop_all()` | `true` | — | — | Silences everything. The tracked current sound receives `REASON_STOPPED` next frame. |
-| `Speaker.is_playing(alias)` | boolean | `false` | — | `true` while `alias` is the current game sound, by engine bookkeeping (a prediction, not a hardware signal). |
-| `Speaker.is_busy()` | boolean | — | — | `true` while the speaker plays anything, including non-game audio. |
-| `Speaker.set_url(alias, url)` | boolean | `false` | `false` for a `path` alias, an undeclared alias or a bad URL | Sets or overrides the URL of an alias declared with `"remote": true` or `"url"`. `url` must start with `http://` or `https://` (https is rewritten to http), contain only printable non-space ASCII and be at most 191 bytes. |
+| `Speaker.stop_all()` | `true` | — | — | Stops all game sounds, playing and queued; robot audio is not affected. The stop is sent at the end of the frame, so a `Speaker.play` made later in the same frame is cancelled too ([KI-STOPALL-PLAY](known-issues.md#ki-stopall-play)). The tracked current sound receives `REASON_STOPPED` next frame. |
+| `Speaker.is_playing(alias)` | boolean | `false` | — | `true` while `alias` is the current game sound, by engine bookkeeping, not a hardware signal: already `true` while the clip waits in the queue, and still `true` if the robot cuts the sound. |
+| `Speaker.is_busy()` | boolean | — | — | `true` while any audio request is active (robot audio included). Filler sounds and conversation streaming do not count. |
+| `Speaker.set_url(alias, url)` | boolean | `false` | `false` for a `path` alias, an undeclared alias, a non-string argument or a bad URL | Sets or overrides the URL of an alias declared with `"remote": true` or `"url"`. `url` must start with `http://` or `https://` (https is rewritten to http; the log shows `downgraded=1`), contain only printable non-space ASCII and be at most 191 bytes. |
 | `Speaker.set_volume(pct)` | nothing | no-op on non-number | — | 0..100, rounded and clamped. The user's volume is restored when the game ends. |
 | `Speaker.get_volume()` | integer | — | — | The volume set by the game this session, else the user's saved volume. |
-| `Speaker.stats()` | table | — | — | `{played_total, finish_dropped, error_count, cooldown_reject, no_hookup, speaker_abandoned_current, speaker_abandoned_peak}`. `finish_dropped`: `on_sound_end` events lost; `no_hookup`: plays that will never report `on_sound_end` because too many plays were in flight. |
+| `Speaker.stats()` | table | — | — | `{played_total, finish_dropped, error_count, cooldown_reject, no_hookup, speaker_abandoned_current, speaker_abandoned_peak}`. `finish_dropped`: `on_sound_end` events lost; `no_hookup`: plays that will never report `on_sound_end` because too many plays were in flight. `speaker_abandoned_*` are always 0 in this firmware. |
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
 | `Speaker.REASON_COMPLETED` | 0 | Played to the end |
 | `Speaker.REASON_STOPPED` | 1 | `Speaker.stop` / `Speaker.stop_all` |
-| `Speaker.REASON_PREEMPTED` | 2 | Replaced by a newer `Speaker.play` |
-| `Speaker.REASON_ERROR` | 3 | Decode or I/O error |
+| `Speaker.REASON_PREEMPTED` | 2 | Replaced as current by a newer `Speaker.play` (the clip itself may still play to its end) |
+| `Speaker.REASON_ERROR` | 3 | Decode or I/O error, or a looping sound that could not restart |
 
-A sound declared `"loop": true` restarts on completion and never fires `REASON_COMPLETED`; stop it with `Speaker.stop`.
+A sound declared `"loop": true` restarts on completion and never fires `REASON_COMPLETED`; stop it with `Speaker.stop`. If the restart is refused (e.g. inside the cooldown) it fires `REASON_ERROR`; a newer `Speaker.play` ends the loop after its current pass.
 
 ```lua
 function on_sound_end(alias, reason)
@@ -234,14 +236,14 @@ end
 
 ## Servo
 
-Moves the robot's joints. Aliases come from `servos` and `poses` in `manifest.json`. Commands are queued and sent after `on_tick`; two moves of the same servo in one frame are merged. Results are local predictions, not hardware acknowledgements.
+Moves the robot's joints. Aliases come from `servos` and `poses` in `manifest.json`. Commands are queued and sent after `on_tick`; two moves of the same servo in one frame are merged: the later move takes the earlier move's place in the queue. Results are local predictions, not hardware acknowledgements.
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
-| `Servo.pose(alias)` | boolean | `false` | `false` for an unknown alias or a full queue | Plays the gesture mapped to a pose alias and marks all four servos busy for about 1.5 s. |
-| `Servo.move(alias, angle, duration_ms[, easing])` | boolean | `false` | `false` | Moves one servo. `angle` in degrees, `duration_ms` 0..65535 (both saturated). `easing`: `"linear"` (default), `"in_out"`, `"bounce"`; anything else returns `false`. |
-| `Servo.stop([alias])` | boolean | `false` | `false` | Stops one servo, or all four without an argument (works even without a `servos` block; `true` only if every stop was queued). |
-| `Servo.is_busy(alias)` | boolean | `false` | — | Predicted from the requested duration, not a hardware signal: fine for "do not queue while moving", not for exact choreography. |
+| `Servo.pose(alias)` | boolean | `false` | `false` for an unknown alias or a full queue | Plays the gesture mapped to a pose alias and marks all four servos busy for about 1.5 s, even when it returns `false`. |
+| `Servo.move(alias, angle, duration_ms[, easing])` | boolean | `false` | `false` | Moves one servo to an absolute angle. `angle` in degrees, `duration_ms` 0..65535 (both saturated on the head). The robot then clamps the angle to the joint's safe range (head 60–150, base 60–120, left 0–150, right 0–150) and `duration_ms` to 50–3000. More than 8 s of motion per servo in 10 s is refused for 5 s (`back_reject_throttle`). `easing`: `"linear"` (default), `"in_out"`, `"bounce"`; anything else returns `false`. |
+| `Servo.stop([alias])` | boolean | `false` | `false` | Moves one servo (or all four without an argument) back to its rest angle over 200 ms; not a freeze in place. `is_busy` reads `false` right after. Without an argument it works even without a `servos` block; `true` only if every stop was queued. Called from `game_end` it is never sent: teardown wipes the servo queue, and the robot returns the joints to rest itself when the game stops. |
+| `Servo.is_busy(alias)` | boolean | `false` | — | Predicted from the requested duration, not a hardware signal: fine for "do not queue while moving", not for exact choreography. Uses the duration you passed, before the robot's 50–3000 ms clamp. |
 | `Servo.list()` | table | — | — | `{servos = {alias = "head"\|"base"\|"left"\|"right"}, poses = {alias = gesture}}`. |
 | `Servo.stats()` | table | — | — | `{pushed_total, coalesced_total, dropped_total, sent_total, send_fail_total, back_reject_throttle, back_reject_validation, back_reject_priority, back_reject_queue_full, last_reject_ms, drain_max_us}`; `back_reject_*` count commands the robot refused, by cause. |
 
@@ -269,9 +271,9 @@ English keyword spotting: the game sends a short list of command words, the robo
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
-| `Voice.set_keywords(list[, sensitivity])` | `true` | raise if `list` is not a table or `sensitivity` is not a number | nil, reason: `keywords_not_array` (empty table, holes or non-integer keys), `too_many_keywords` (over 64), `too_deep`, `too_many_keys`, `encode_failed` (a function, userdata or thread inside), `payload_too_big` (the whole encoded body over 2047 bytes), `send_failed` | Sends the vocabulary **and starts listening**; opening a session (not in talk-flow) stops the sound that is playing, to keep the speaker out of the microphone. `list`: array of up to 64 strings; element types are not checked, so pass strings only. `sensitivity` is truncated to an integer and passed to the voice server unchecked. `true` only means the request was queued; a refusal arrives as an `error` event. While a session is connecting or listening, a second call is refused with `error`/`busy` and the old list stays: to change words call `Voice.stop()`, then `set_keywords` (the robot reconnects, which takes up to a few seconds). |
+| `Voice.set_keywords(list[, sensitivity])` | `true` | raise if `list` is not a table or `sensitivity` is not a number | nil, reason: `keywords_not_array` (empty table, holes or non-integer keys), `too_many_keywords` (over 64), `too_deep`, `too_many_keys`, `encode_failed` (a function, userdata or thread inside), `payload_too_big` (the whole encoded body over 2047 bytes), `send_failed` | Sends the vocabulary **and starts listening**; opening a session (not in talk-flow) stops the sound that is playing, to keep the speaker out of the microphone. `list`: array of up to 64 strings; element types are not checked, so pass strings only. `sensitivity` must be an integer (a number with a fraction is sent as 0) and is passed to the voice server unchecked. `true` only means the request was queued; a refusal arrives as an `error` event. Menu launch: while listening, a second call is refused with `error`/`busy` and the server keeps the old list; while still connecting it is also refused with `busy`, but its list replaces the pending one and is the list sent. To change words reliably call `Voice.stop()`, then `set_keywords` (the robot reconnects, which takes up to a few seconds). In talk-flow every list is forwarded to the conversation with no `busy` check; if the conversation socket is down the list is dropped without an event. |
 | `Voice.start()` | `true` | — | nil, `"send_failed"` | Not needed: `set_keywords` already starts listening. While listening it does nothing; when idle it produces an `error`/`no_keywords` event. It cannot resume after `Voice.stop()`; call `set_keywords` again. In talk-flow it always does nothing. |
-| `Voice.stop()` | `true` | — | — | Stops listening and closes the session. Idempotent. |
+| `Voice.stop()` | `true` | — | — | Stops listening and closes the session. Idempotent. In talk-flow it does nothing. |
 | `Voice.is_available()` | boolean | — | — | `true` while the game is running (`false` during the top level and `game_start`). It does not probe the voice service; failures arrive as events. |
 
 ### Voice events
@@ -280,13 +282,14 @@ Each voice frame arrives as `on_voice_event(e)`, decoded from JSON into a table 
 
 | Frame | Meaning |
 | --- | --- |
-| `e.type == "VOICE_COMMAND"`, `e.data.keyword` | A keyword from the list was heard. *Shape set by the voice server, not yet confirmed against it ([Q-VOICE-SHAPE](../../skill/open-questions.md#q-voice-shape)).* |
+| `e.type == "VOICE_COMMAND"`, `e.data.keyword` | A keyword from the list was heard. *Shape set by the voice server, not yet confirmed against it ([Q-VOICE-SHAPE](../../knowledge/open-questions.md#q-voice-shape)).* |
+| `e.type == "VOICE_COMMAND"`, `e.data.status == "keywords_configured"` | The server loaded the list: `e.data.accepted` will trigger, `e.data.rejected` never will. Not a command. *Seen in robot logs; the robot passes server frames through unchanged.* |
 | `e.type == "VOICE_COMMAND"`, `e.data.status == "unavailable"` | Keyword spotting is down on the server: hide voice hints, keep playing on buttons. |
 | `e.type == "error"`, `e.code`, `e.message` | Generated by the robot. `e.code` is one of the codes below. |
 
 | `e.code` | Cause | Game |
 | --- | --- | --- |
-| `busy` | `set_keywords` while a session is active, or the microphone is in use | continues; the old list stays |
+| `busy` | `set_keywords` while a session is active, or the microphone is in use | continues; while listening the old list stays |
 | `no_keywords` | `Voice.start()` with no list sent | continues |
 | `no_session_key` | the robot's session key is renewing | continues; retry later with `set_keywords` |
 | `invalid_payload` | keyword body too large for the robot | continues |
@@ -320,10 +323,27 @@ Leaderboard of the robot game platform. Lua cannot write files; this is the only
 
 | Call | Returns | Bad argument | Failure | Notes |
 | --- | --- | --- | --- | --- |
-| `Ranking.report{score = n}` | boolean | `false` when the argument is not a table or `score` is not a number | `false` when sending failed | Submits a score; the engine adds the session duration itself. Callable several times per session (e.g. per level). `true` only means the report left the head board: the robot drops it when the game was not started from the menu, and in talk-flow it goes to the conversation instead of the leaderboard, so no result follows. |
+| `Ranking.report{score = n}` | boolean | `false` when the argument is not a table or `score` is neither a number nor a numeric string | `false` when the report could not be encoded; a lost IPC frame still returns `true` | Submits a score; the engine adds the session duration itself. Callable several times per session (e.g. per level). `true` only means the report left the head board: the robot drops it when the game was not started from the menu, and in talk-flow it goes to the conversation instead of the leaderboard, so no result follows. |
 | `Ranking.get_result()` | table or nil | — | — | The leaderboard fetched after the last successful report, or `nil` if none arrived yet. **Consume-once**: the next call returns `nil` until a new result arrives. Poll it from `on_tick`. |
 
-Result table: `{top = {{rank, profile_id, display_name, score, played_at}, ...}, my_rank = {...} or nil, my_best_score = number or nil}`. A result larger than 256 JSON nodes is dropped (`nil`).
+Result table: `{top = {{rank, profile_id, display_name, score, played_at}, ...}, my_rank = {...} or nil, my_best_score = number or nil}`. A result deeper than 8 levels, larger than 256 JSON nodes, or over 2047 bytes is dropped (`nil`). A result that arrives after a game ended is returned by the next game's first call.
+
+## Pack
+
+**Internal, not for game code.** Documents the body board publishes for built-in packs (e.g. the to-do journey). The head keeps them across games and restarts of the Lua VM; they are lost when the head reboots and sent again by the body board.
+
+| Call | Returns | Bad argument | Failure | Notes |
+| --- | --- | --- | --- | --- |
+| `Pack.data(key)` | table or nil | raises when `key` is not a string | `nil` when the document was not published yet, does not parse, or exceeds its node budget | Decoded once per version and cached: every call returns the **same** table, so treat it as read-only. Call it in `game_start` and again from `on_pack_data`. |
+
+## Telemetry
+
+Reports what the child did inside the game to the server, one MQTT message (`game.tel`) per accepted call, handed to the body board after the current frame is drawn. The pack chooses the event name and fields; the body board forwards the message unchanged. Report milestones (an answer, a stage end, a reward opened), never every frame or every press: at most 3 events in any 5000 ms window. Nothing personal (names, voice, typed text). Not for data that must arrive: messages are lost while the robot is offline (also level `error`). Call through `libs/tel.lua` so a pack still runs on a head without this API.
+
+| Call | Returns | Bad argument | Failure | Notes |
+| --- | --- | --- | --- | --- |
+| `Telemetry.event(name[, fields[, opts]])` | boolean | `false`, never raises: `name` not `[a-z0-9_.]` 1-24 chars or starting with `engine.`/`sys.`; `fields` not a flat table of at most 8 pairs named `[a-z0-9_]` 1-16 chars; a reserved name (`id`, `trigger`, `t_ms`, `pv`, `ev`, `key`, `level`, `data`); a value that is not a boolean, a string of at most 40 bytes, or a number that fits −2147483648..2147483647 after rounding (NaN and ±inf rejected); fields over 300 bytes once encoded; `opts` not a table; `opts.key` not a string of `[a-z0-9_.]` 1-24 chars that neither starts nor ends with `.`; `opts.level` not `info`/`warn`/`error` | `false` over the rate limit; when 3 calls are already held before `game.start`; after the game ended (`game_end` runs after `game.stop`) or failed to start; on every call when the head could not allocate telemetry memory (`game.stop` shows `tel_off=1`) | Floats are rounded to the nearest integer, booleans sent as 0/1, `"`, `\`, control bytes, DEL and bytes that are not valid UTF-8 become `_`. `opts.key` = `x` sends key `game.tel.x`; `opts.level` sets the message level (default `info`; `error` is still dropped offline). An unknown `opts` key is ignored and the event still goes out. Calls before `game.start` (top level of the entry script and `game_start`) are held (up to 3) and sent right after `game.start` with `t_ms` 0. They count against the rate window, so further calls within 5000 ms of the first held one are rejected. Held calls are dropped if the game fails to start. The engine adds `id`, `trigger` (`menu`/`a2a`/`todo`), `t_ms` (ms since `game.start`), `pv` (manifest `version`, cut to 16 bytes, omitted when absent; also on `game.start`) and `ev` (the event name), before your fields. The first rejection of a session prints one `telemetry reject ev=... why=...` line; `game.stop` reports `tel` (sent) and `tel_drop` (rejected or lost, omitted when 0; calls after the game ended are not counted), or `tel_off` when the API was disabled. |
+| `Telemetry.caps()` | table | — | — | What this head supports: `{rate_max, rate_window_ms, name_max, key_max, fields_max, field_name_max, str_max, fields_max_bytes, opts = {key = true, level = true}}`. Check `opts` before relying on an option a newer SDK documents. |
 
 ## Sandbox
 
@@ -372,20 +392,22 @@ Every value is generated from `contract/constraints.json` (key column).
 | Integers | 32-bit | overflow wraps | `lua_int_bits` |
 | Live `Text` | 8 | `Text.new` → nil, `"pool_full"` | `text_slots` |
 | Live `Shape` lines | 8, width ≤ 64 px, 256 KiB raster | nil, `pool_full` / `no_mem`; width clamped | `line_slots, line_width_max, line_pool_max_bytes` |
-| Sprites | no count cap; PSRAM `w*h*3` (PNG with alpha) or `w*h*2` (others) | factory → nil, msg | `facts.sprite_cap` |
+| Sprites | no count cap; PSRAM `w*h*3` (PNG with alpha) or `w*h*2` (others); same-path `Sprite.image` sprites share one buffer | factory → nil, msg | `facts.sprite_cap` |
 | Image / PNG file | ≤ 480 × 320 / ≤ 1 MiB | load fails | `img_max_w, img_max_h, png_max_file_bytes` |
 | Scale / rotate | both sides ≤ 96 px | call returns `false` | `transform_max_px` |
 | Anim | 1 playing; file ≤ 4 MiB; frame delay ≥ 10 ms | `play` stops the other Anim | `facts.anim_concurrent, anim_max_file_bytes, anim_min_frame_ms` |
-| Fonts | file ≤ 512 KiB; 8–96 px (default 16); 4 faces | `set_font` → nil, msg | `font_*` |
+| Fonts | file ≤ 512 KiB; 8–96 px (default 16); 8 faces | `set_font` → nil, msg | `font_*` |
 | Asset path | ≤ 188 − len(game_id) bytes | raise `unsafe ... path` | `sandbox_path_max` |
 | Manifest | ≤ 64 KiB | pack rejected | `manifest_max_bytes` |
 | Input actions | ≤ 16, name ≤ 23 chars | pack rejected | `input_actions_max, input_action_name_max` |
 | Input queue | 32 events | `on_input_lost(count)` | `input_ring_slots` |
 | Button repeat | first after 400 ms, then every 80 ms | — | `button_repeat_*` |
 | HOME hold | ≥ 1500 ms | game force-exits | `home_force_exit_ms` |
+| Button click debounce | 300 ms | a HOME press that soon after another click is ignored | `button_click_debounce_ms` |
+| Servo move | 50–3000 ms; ≤ 8 s motion per 10 s per servo | duration clamped; over the duty limit refused for 5 s | `servo_move_*, servo_duty_*` |
 | Sound aliases | ≤ 64; alias ≤ 23, path ≤ 63, URL ≤ 191 chars | **whole pack rejected** (also for a missing sound file) | `sound_*` |
 | Sound cooldown | 150 ms between plays | `Speaker.play` → `false` | `sound_cooldown_ms` |
-| Sound channels / finish queue | 1 / 8 events | preempt / `on_sound_lost(count)` | `facts.sound_channels, sound_finish_ring` |
+| Sound channels / finish queue | 1 / 8 events | plays queue ([KI-SOUND-QUEUE](known-issues.md#ki-sound-queue)) / `on_sound_lost(count)` | `facts.sound_channels, sound_finish_ring` |
 | Servo / pose aliases | ≤ 8 / ≤ 16 | pack rejected | `servo_aliases_max, pose_aliases_max` |
 | LED blink / pulse | 333–5000 ms / 100–5000 ms | `false` (rejected, not clamped) | `led_*` |
 | Voice keywords / body | ≤ 64 / ≤ 2047 bytes | nil, reason | `voice_keywords_max, voice_start_json_max_bytes` |

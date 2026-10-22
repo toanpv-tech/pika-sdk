@@ -1,6 +1,6 @@
 """Keep the SDK's prose in step with the engine contract.
 
-Checks every Markdown file under docs/, skill/ and libraries/ plus the kit:
+Checks every Markdown file under docs/, knowledge/ and libraries/ plus the kit:
   1. every `Global.name` / `obj:name` API mention exists in contract/api.json
      (an invented call in the docs becomes an invented call in generated code);
   2. every function, method, constant and hook in api.json appears in docs/reference/api.md;
@@ -16,12 +16,20 @@ Checks every Markdown file under docs/, skill/ and libraries/ plus the kit:
      KiB, MiB, KB, MB, bytes, B, fps, Hz) equal to a limit or derived value
      must be written as (`key` = N) or linked;
  10. generated pages (docs/reference/api.md, known-issues.md, the pages rendered
-     from contract/pages/, skill/api-contract.md, skill/constraints.md) start
+     from contract/pages/, knowledge/api-contract.md, knowledge/constraints.md) start
      with the GENERATED header and match what tools/gen_contract.py produces;
- 11. sdk.index.json paths exist; skill/skill.index.json, libraries/libs.index.json
-     and examples/examples.index.json list exactly what is on disk; versions agree;
- 12. every skill/recipes/*.md with a manifest ```json block and ```lua blocks
-     runs through tools/smoke.py as a temporary pack without errors.
+ 11. sdk.index.json paths exist; knowledge/skill.index.json, libraries/libs.index.json
+     and test-packs/examples.index.json list exactly what is on disk; versions agree;
+     every public global in api.json has an test-packs/test_<global> pack that lists
+     it in `covers`, and every pack's libs/testkit.lua equals libraries/testkit.lua;
+ 12. every knowledge/recipes/*.md with a manifest ```json block and ```lua blocks
+     runs through tools/smoke.py as a temporary pack without errors;
+ 13. the Claude Code plugins (.claude-plugin/marketplace.json, agents/, skills/,
+     plugins/*/) are workflow only: every plugin version equals sdk_version,
+     every agent/skill has a name matching its file or folder and a description,
+     no adapter names an engine API, and every SDK path an adapter quotes
+     (`knowledge/...`, `tools/...`, `docs/...`, `contract/...`, `libraries/...`,
+     `test-packs/...`, `kit/...`) exists.
 
 Opt-outs, per line: `<!-- not-an-api -->` for check 1 (tables that list calls
 which do NOT exist, e.g. "Sprite.rotate: no such call"); `<!-- number-ok -->`
@@ -33,10 +41,11 @@ usage: python tools/check_docs.py        exit 1 on any finding
 import json
 import os
 import re
+import subprocess
 import sys
 
 SDK = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-SCAN = ["docs", "skill", "libraries", "kit", "README.md", "MAINTAINING.md", "RATIONALE.md"]
+SCAN = ["docs", "knowledge", "libraries", "kit", "README.md", "AGENTS.md", "MAINTAINING.md", "RATIONALE.md"]
 OPT_OUT = "<!-- not-an-api -->"
 PAGES_SRC = os.path.join(SDK, "contract", "pages")
 
@@ -74,7 +83,7 @@ GUIDE_HEAD = re.compile(r"^> \*\*For:\*\*.+\*\*Result:\*\*", re.M)
 
 def md_files(top):
     for d, dirs, fs in os.walk(top):
-        dirs[:] = [x for x in dirs if x not in ("assets", "lua-5.5.0", "node_modules", ".git")
+        dirs[:] = [x for x in dirs if x not in ("assets", "node_modules", ".git")
                    and os.path.join(d, x) != PAGES_SRC]
         for f in fs:
             if f.endswith(".md"):
@@ -218,7 +227,7 @@ def check_guide_numbers(values):
 
 
 # ------------------------------------------------------------------ 10. generated pages
-GENERATED = ["docs/reference/api.md", "docs/reference/known-issues.md", "skill/api-contract.md", "skill/constraints.md"]
+GENERATED = ["docs/reference/api.md", "docs/reference/known-issues.md", "knowledge/api-contract.md", "knowledge/constraints.md"]
 
 
 def generated_pages():
@@ -269,6 +278,41 @@ def _paths(obj):
             yield from _paths(v)
 
 
+def check_examples(ex, present):
+    """test-packs/ holds one test_<global> pack per public global, each on an
+    unchanged copy of libraries/testkit.lua."""
+    out = []
+    api = load("contract/api.json")
+    internal = set(api.get("internal", {}))
+    public = []
+    for g, spec in api["globals"].items():
+        names = ["%s.%s" % (g, n) for n in spec.get("functions", []) + spec.get("methods", [])]
+        if names and not all(n in internal for n in names):
+            public.append(g)
+    entries = {e["dir"]: e for e in load("test-packs/examples.index.json")["examples"]}
+    for g in sorted(public):
+        d = "test_" + g.lower()
+        if d not in present:
+            out.append("test-packs/%s  missing: every public global has a test pack (%s)" % (d, g))
+        elif g not in entries.get(d, {}).get("covers", []):
+            out.append("test-packs/examples.index.json  %s does not list %s in covers" % (d, g))
+    with open(os.path.join(SDK, "libraries", "testkit.lua"), "rb") as f:
+        kit = f.read()
+    for d in sorted(present):
+        p = os.path.join(ex, d, "libs", "testkit.lua")
+        if not os.path.isfile(p):
+            out.append("test-packs/%s/libs/testkit.lua  missing (copy libraries/testkit.lua)" % d)
+            continue
+        with open(p, "rb") as f:
+            if f.read() != kit:
+                out.append("test-packs/%s/libs/testkit.lua  differs from libraries/testkit.lua (copy it again)" % d)
+    r = subprocess.run([sys.executable, os.path.join(SDK, "tools", "gen_tel_vectors.py"), "--check"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        out.append("test-packs/test_telemetry/libs/tel_vectors.lua  " + (r.stdout.strip() or r.stderr.strip()))
+    return out
+
+
 def check_indexes():
     out = []
     sdk = load("sdk.index.json")
@@ -276,18 +320,18 @@ def check_indexes():
         if not os.path.exists(os.path.join(SDK, p)):
             out.append("sdk.index.json  lists %s, which does not exist" % p)
 
-    sk = load("skill/skill.index.json")
+    sk = load("knowledge/skill.index.json")
     listed = {e["file"] for e in sk.get("files", [])} | {e["file"] for e in sk.get("recipes", {}).get("items", [])}
     for f in sorted(listed):
-        if not os.path.isfile(os.path.join(SDK, "skill", f)):
-            out.append("skill/skill.index.json  lists %s, which does not exist" % f)
-    present = {f for f in os.listdir(os.path.join(SDK, "skill")) if f.endswith(".md")}
-    present |= {"recipes/" + f for f in os.listdir(os.path.join(SDK, "skill", "recipes")) if f.endswith(".md")}
+        if not os.path.isfile(os.path.join(SDK, "knowledge", f)):
+            out.append("knowledge/skill.index.json  lists %s, which does not exist" % f)
+    present = {f for f in os.listdir(os.path.join(SDK, "knowledge")) if f.endswith(".md")}
+    present |= {"recipes/" + f for f in os.listdir(os.path.join(SDK, "knowledge", "recipes")) if f.endswith(".md")}
     for f in sorted(present - listed):
-        out.append("skill/%s  is not listed in skill/skill.index.json" % f)
+        out.append("knowledge/%s  is not listed in knowledge/skill.index.json" % f)
     for t in sk.get("templates", {}).get("items", []):
-        if not os.path.isdir(os.path.join(SDK, "skill", "templates", t["dir"])):
-            out.append("skill/skill.index.json  lists template %s, which does not exist" % t["dir"])
+        if not os.path.isdir(os.path.join(SDK, "starters", t["dir"])):
+            out.append("knowledge/skill.index.json  lists template %s, which does not exist" % t["dir"])
 
     libs = os.path.join(SDK, "libraries")
     listed = {m["file"] for m in load("libraries/libs.index.json")["modules"]}
@@ -296,18 +340,19 @@ def check_indexes():
     out += ["libraries/libs.index.json  lists %s, which does not exist" % f for f in sorted(listed - present)]
     out += ["libraries/%s  is not listed in libraries/libs.index.json" % f for f in sorted(present - listed)]
 
-    ex = os.path.join(SDK, "examples")
-    listed = {e["dir"] for e in load("examples/examples.index.json")["examples"]}
+    ex = os.path.join(SDK, "test-packs")
+    listed = {e["dir"] for e in load("test-packs/examples.index.json")["examples"]}
     present = {d for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))}
-    out += ["examples/examples.index.json  lists %s, which does not exist" % d for d in sorted(listed - present)]
-    out += ["examples/%s  is not listed in examples/examples.index.json" % d for d in sorted(present - listed)]
+    out += ["test-packs/examples.index.json  lists %s, which does not exist" % d for d in sorted(listed - present)]
+    out += ["test-packs/%s  is not listed in test-packs/examples.index.json" % d for d in sorted(present - listed)]
+    out += check_examples(ex, present)
 
     ver = open(os.path.join(SDK, "sdk_version"), encoding="utf-8").read().strip()
     if sdk.get("sdk_version") != ver:
         out.append("sdk.index.json  sdk_version %s, sdk_version file says %s" % (sdk.get("sdk_version"), ver))
     api_min = (sdk.get("engine_api") or {}).get("min")
-    for rel in ("skill/skill.index.json", "docs/docs.index.json", "libraries/libs.index.json",
-                "examples/examples.index.json"):
+    for rel in ("knowledge/skill.index.json", "docs/docs.index.json", "libraries/libs.index.json",
+                "test-packs/examples.index.json"):
         j = load(rel)
         for k in ("sdk_version", "version"):
             if k in j and j[k] != ver:
@@ -340,11 +385,11 @@ def check_recipes():
     import subprocess
     import tempfile
     out, skipped, ran = [], [], 0
-    rdir = os.path.join(SDK, "skill", "recipes")
+    rdir = os.path.join(SDK, "knowledge", "recipes")
     for fn in sorted(os.listdir(rdir)):
         if not fn.endswith(".md"):
             continue
-        rel = "skill/recipes/" + fn
+        rel = "knowledge/recipes/" + fn
         text = open(os.path.join(rdir, fn), encoding="utf-8").read()
         man, lua, extra = None, [], {}
         for m in BLOCK.finditer(text):
@@ -410,6 +455,63 @@ def check_recipes():
     return out, summary
 
 
+ADAPTER_PATH = re.compile(r"`(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:knowledge|tools|docs|contract|libraries|examples|kit)/[^`\s\"]*)")
+
+
+def adapter_files():
+    for top in ("agents", "skills", "plugins"):
+        for d, _, fs in os.walk(os.path.join(SDK, top)):
+            for f in fs:
+                if f.endswith(".md"):
+                    yield os.path.join(d, f)
+
+
+def front_matter(text):
+    if not text.startswith("---"):
+        return {}
+    head = text.split("---", 2)[1]
+    out = {}
+    for m in re.finditer(r"^(\w[\w-]*):\s*(.*)$", head, re.M):
+        out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def check_adapters(call):
+    out = []
+    mk = os.path.join(SDK, ".claude-plugin", "marketplace.json")
+    if not os.path.isfile(mk):
+        return out
+    version = open(os.path.join(SDK, "sdk_version"), encoding="utf-8").read().strip()
+    for p in load(os.path.join(".claude-plugin", "marketplace.json"))["plugins"]:
+        if p.get("version") != version:
+            out.append(".claude-plugin/marketplace.json  plugin %s version %s, sdk_version %s"
+                       % (p["name"], p.get("version"), version))
+    for path in adapter_files():
+        rel = os.path.relpath(path, SDK).replace(os.sep, "/")
+        text = open(path, encoding="utf-8").read()
+        fm = front_matter(text)
+        is_agent = "/agents/" in "/" + rel and not rel.endswith("SKILL.md")
+        is_skill = rel.endswith("/SKILL.md")
+        if is_agent or is_skill:
+            want = os.path.basename(path)[:-3] if is_agent else os.path.basename(os.path.dirname(path))
+            if fm.get("name") != want:
+                out.append("%s  name %r does not match %r" % (rel, fm.get("name"), want))
+            if not fm.get("description"):
+                out.append("%s  no description" % rel)
+        for n, line in enumerate(text.splitlines(), 1):
+            if OPT_OUT in line:
+                continue
+            for glob, name in call.findall(line):
+                out.append("%s:%d  adapter names the engine API %s.%s (point at knowledge/ instead)" % (rel, n, glob, name))
+            for m in ADAPTER_PATH.finditer(line):
+                target = m.group(1).rstrip(".,;:)")
+                if "<" in target or "*" in target:
+                    target = target.split("<")[0].split("*")[0].rsplit("/", 1)[0]
+                if target and not os.path.exists(os.path.join(SDK, target.split("#")[0])):
+                    out.append("%s:%d  quotes %s, which does not exist" % (rel, n, m.group(1)))
+    return out
+
+
 def main():
     api = load("contract/api.json")
     cons = load("contract/constraints.json")
@@ -463,6 +565,7 @@ def main():
     findings += gen + check_indexes()
     rec, rec_note = check_recipes()
     findings += rec
+    findings += check_adapters(call)
 
     for f in findings:
         print(f)

@@ -18,7 +18,7 @@ Codes (ERROR: the robot refuses or breaks it; WARN: likely wrong):
   ERROR API           a call to a name the engine does not register
   ERROR TEXT          Text.new past the pool: pool_full
   ERROR XFORM         set_scale/set_rotation on a sprite over the transform limit
-  ERROR FRAME-FMT     set_frame given a PNG (strips are raw)
+  ERROR FRAME-FMT     set_frame given a PNG, or on an alpha PNG sprite (strips are raw RGB565)
   ERROR VOICE-EARLY   Voice.set_keywords/start in the top level or game_start (dropped)
   ERROR HOOK-REBIND   on_tick/on_input reassigned after load (the robot keeps the first)
   WARN  API, MISSING-API  reading a name the engine does not register (nil)
@@ -142,7 +142,10 @@ def lint(pack, man, api, lim, rt, rep):
     elif not os.path.isfile(os.path.join(pack, main)):
         rep.add("error", "MANIFEST", "manifest: main '%s' not found" % main)
 
-    acts = (man.get("input") or {}).get("actions") or {}
+    acts = (man.get("input") or {}).get("actions")
+    if not isinstance(acts, dict):
+        # Same defaults as the engine (input.c seed_defaults).
+        acts = {"confirm": ["button:enter"], "left": ["button:left"], "right": ["button:right"]}
     if len(acts) > lim["input_actions_max"]:
         rep.add("error", "MANIFEST", "%d input actions > %d" % (len(acts), lim["input_actions_max"]))
     for a, srcs in acts.items():
@@ -307,9 +310,25 @@ def main():
 
     def anim_ms(rel):
         p = rel_ok(rel)
-        if not (p and os.path.isfile(p) and p.lower().endswith(".gif")):
+        if not (p and os.path.isfile(p)):
             return None
-        return gif_ms(p, lim["anim_min_frame_ms"], der["tick_period_ms"])
+        if p.lower().endswith(".gif"):
+            return gif_ms(p, lim["anim_min_frame_ms"], der["tick_period_ms"])
+        # MJPEG has no frame delay: one JPEG per engine frame (anim_codec.cpp).
+        with open(p, "rb") as f:
+            frames = f.read().count(b"\xff\xd8\xff")
+        return frames * der["tick_period_ms"] if frames else None
+
+    def anim_ok(rel):
+        """The codec opens the file: GIF header for .gif, a JPEG SOI for .mjpeg/.mjpg."""
+        p = rel_ok(rel)
+        if not (p and os.path.isfile(p)):
+            return False
+        with open(p, "rb") as f:
+            head = f.read(6)
+        if p.lower().endswith(".gif"):
+            return head[:3] == b"GIF"
+        return head[:2] == b"\xff\xd8"
 
     def read(rel):
         p = rel_ok(rel)
@@ -321,7 +340,7 @@ def main():
 
     host = rt.table_from({
         "api": api, "lim": lim, "manifest": man, "file_size": file_size, "png_size": png,
-        "sound_ms": sms, "anim_ms": anim_ms, "read": read, "report": lambda k, c, m: rep.add(k, c, m),
+        "sound_ms": sms, "anim_ms": anim_ms, "anim_ok": anim_ok, "read": read, "report": lambda k, c, m: rep.add(k, c, m),
         "print": lambda s: logs.append(s),
     }, recursive=True)
     rt.globals().HOST = host

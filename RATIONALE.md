@@ -9,7 +9,7 @@ can do for them: the brief, the art, the robot test. How to keep these principle
 ## 1. Split by audience
 
 `docs/` is for people (designers, artists, developers, QA): one page per goal, organised by
-kind. `skill/` is for AI assistants: routing, rules with IDs and checks, recipes and
+kind. `knowledge/` is for AI assistants: routing, rules with IDs and checks, recipes and
 templates, with no installation steps. Neither has to wade through material written for the
 other.
 
@@ -34,7 +34,7 @@ follow the same path.
 
 A claim that is not proven in the engine source carries a label (🤖 seen on a robot,
 🧪 heuristic, ⚠️ open), and every open question has a safe way to code around it in
-`skill/open-questions.md`. Firmware behaviour that is surprising or wrong is listed with a
+`knowledge/open-questions.md`. Firmware behaviour that is surprising or wrong is listed with a
 stable ID and a workaround in the known-issues page. Work continues today, readers know
 what is firm, and the engine team gets one list to answer.
 
@@ -53,13 +53,13 @@ Pika Studio runs the real engine; only a robot proves performance.
 
 ## 6. Lessons become rules
 
-A failure found on a robot is written up once, by symptom, in `skill/pitfalls.md`, and where
+A failure found on a robot is written up once, by symptom, in `knowledge/pitfalls.md`, and where
 possible turned into a lint or a smoke check. Every team then trips over it at most once.
 
 ## 7. Templates by game size
 
 A one-screen game and a multi-screen game with levels and a leaderboard need different
-starting points. `skill/templates/` holds both; larger games keep their rules in a plain Lua
+starting points. `starters/` holds both; larger games keep their rules in a plain Lua
 module, testable without the robot, and wire them to sprites, text and sound in one place.
 
 ## 8. Educational games need learning goals

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Validate the plugin marketplace and keep the SDK in step with the contract.
+# Enable once per clone: git config core.hooksPath .githooks
+root=$(git rev-parse --show-toplevel)
+py=${PYTHON:-python}
+
+if command -v claude >/dev/null 2>&1; then
+    claude plugin validate --strict "$root" || { echo "pre-commit: plugin validate failed"; exit 1; }
+else
+    echo "pre-commit: claude CLI not found; skipped plugin validate"
+fi
+"$py" "$root/tools/gen_contract.py" --check || { echo "pre-commit: contract is stale (tools/gen_contract.py)"; exit 1; }
+"$py" "$root/tools/check_docs.py" || { echo "pre-commit: check_docs failed (see above)"; exit 1; }

@@ -18,3 +18,9 @@ tools/node_modules/
 **/pika-spec.json
 **/shot.png
 __pycache__/
+
+# claude plugin eval output
+evals/results/
+
+# Claude Security scan reports
+CLAUDE-SECURITY-*/

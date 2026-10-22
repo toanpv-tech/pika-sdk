@@ -1,0 +1,27 @@
+{
+  "name": {"vi": "Kiểm tra servo", "en": "Servo Test"},
+  "version": "1.0.0",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button", "servo"],
+  "input": {
+    "actions": {
+      "fire": ["button:enter"],
+      "prev": ["button:left"],
+      "next": ["button:right"]
+    }
+  },
+  "servos": {
+    "head":  "head",
+    "base":  "base",
+    "body":  "body",
+    "left":  "left",
+    "right": "right"
+  },
+  "poses": {
+    "neutral":    "default",
+    "hi":         "say_hi",
+    "wave":       "left_wave",
+    "bad_system": "system_error"
+  }
+}

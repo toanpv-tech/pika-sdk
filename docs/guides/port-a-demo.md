@@ -4,12 +4,13 @@
 
 Porting a kit demo is mechanical: the same hooks, the same API names, the same asset paths.
 The step-by-step procedure (manifest mapping, the JS ↔ Lua rules, 1-based data, sprite
-export, recording list) is defined once in [skill/porting.md](../../skill/porting.md); an AI
+export, recording list) is defined once in [knowledge/porting.md](../../knowledge/porting.md); an AI
 assistant follows it with [prompt C](../templates/prompts.md#c-port-a-kit-demo). This guide
 covers what a person decides and checks, and how to port a demo that was **not** built on
 the kit.
 
-The worked pair is `kit/template/index.html` → `examples/pick_word/`; keep both open.
+Keep the demo and `starters/minimal-game/` (the shape of the Lua pack) open side by
+side; `kit/template/index.html` is the reference demo.
 
 ## What you check
 

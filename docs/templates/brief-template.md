@@ -40,7 +40,7 @@ The robot has three buttons (LEFT, ENTER, RIGHT) plus HOME, which leaves the gam
 
 - Voice can fail (no network, noisy room). How does the game continue with buttons only:
   [...] (buttons must always be enough to finish a play)
-- What should a short HOME press do during play: [exit / ask first] (holding HOME always exits)
+- What should a short HOME press do during play: [exit / ask first] (holding HOME or pressing ON/OFF always exits)
 
 ## 5. Rules
 

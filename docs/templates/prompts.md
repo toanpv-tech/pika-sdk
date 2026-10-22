@@ -1,11 +1,11 @@
 # Prompts (copy and paste)
 
 Paste one of these into your AI assistant and fill in the `[...]` parts. Each prompt makes
-the AI read `skill/` before writing anything; without that, assistants invent functions the
+the AI read `knowledge/` before writing anything; without that, assistants invent functions the
 robot does not have. Stage IDs (S0–S9) are defined in the [pipeline](../reference/pipeline.md).
 
 Working in a folder that is not the SDK? Give the AI the SDK location (a local path or the
-git URL) so it can read `skill/` and `contract/`.
+git URL) so it can read `knowledge/` and `contract/`.
 
 | Prompt | Stage |
 | --- | --- |
@@ -23,8 +23,8 @@ You will help me build an educational game for the PIKA robot (Pika Engine: Lua 
 English keyword voice).
 
 STEP 1 - Load the contract (mandatory, before writing any code):
-Read the skill/ folder of the Pika SDK at: [SDK path or git URL]
-Start with skill/SKILL.md and follow its routing. contract/api.json is the complete
+Read the knowledge/ folder of the Pika SDK at: [SDK path or git URL]
+Start with knowledge/SKILL.md and follow its routing. contract/api.json is the complete
 API list: a name that is not in it does not exist. Limits come from
 contract/constraints.json. Where a doc marks something as an open question, use the
 safe way it describes.
@@ -40,14 +40,14 @@ STEP 3 - Before coding, reply with:
 4. Win and lose conditions.
 5. A budget: live sprites and their PSRAM, Text labels, font faces, sound aliases.
 6. What in the brief the engine cannot do, each with an alternative.
-7. Whether you propose a browser demo first (skill/demo-kit.md) or Lua directly.
+7. Whether you propose a browser demo first (knowledge/demo-kit.md) or Lua directly.
 Do not write code until I answer.
 
 STEP 4 - After I confirm:
 - Demo: start from kit/template/ in a sibling folder inside kit/, outside any game
   pack; run the S3 gate (docs/reference/pipeline.md) and paste both outputs until the
   verdict is READY TO PORT.
-- Lua: start from skill/templates/ or the closest example; reuse libraries/ modules
+- Lua: start from starters/ or the closest example; reuse libraries/ modules
   instead of rewriting them. Run the S5 gate with steps that reach every branch and
   paste the FULL output. Fix until it ends with 0 error(s); explain every warning.
 - Finish with the key presses that test every branch in Pika Studio.
@@ -56,10 +56,10 @@ STEP 4 - After I confirm:
 [brief]
 ```
 
-Short version, for a session where the AI has already read `skill/`:
+Short version, for a session where the AI has already read `knowledge/`:
 
 ```text
-Re-read skill/SKILL.md if you have not in this session. Only use names from
+Re-read knowledge/SKILL.md if you have not in this session. Only use names from
 contract/api.json. Brief: [path]. Before coding: summary, learning goals, controls
 on left/enter/right, win/lose, budget, what exceeds the limits, demo-first or
 Lua-direct. Wait for my answer.
@@ -74,7 +74,7 @@ smoke output:
 [paste the full output of `python tools/smoke.py <pack> "<steps>"`]
 Robot log (if on the robot): [game.start / game.warn / game.error / game.stop lines]
 
-Check skill/pitfalls.md and docs/reference/known-issues.md first. Explain the cause
+Check knowledge/pitfalls.md and docs/reference/known-issues.md first. Explain the cause
 from the code before changing anything. Fix it, run tools/smoke.py again and paste
 the full output. If this failure is in neither file, say so and draft a pitfalls entry.
 ```
@@ -82,7 +82,7 @@ the full output. If this failure is in neither file, say so and draft a pitfalls
 ## C. Port a kit demo
 
 ```text
-Read skill/SKILL.md and skill/porting.md in the Pika SDK at [SDK path].
+Read knowledge/SKILL.md and knowledge/porting.md in the Pika SDK at [SDK path].
 Port the demo in [demo folder] (with its pika-spec.json, verdict READY TO PORT)
 to a Lua pack in [pack folder], outside the demo folder.
 Follow porting.md step by step. Keep the demo's asset paths. Then run the S5 gate
@@ -93,7 +93,7 @@ exported or recorded (sprites, frame strips, voice lines).
 ## D. Review a robot run
 
 ```text
-Read skill/SKILL.md, docs/reference/telemetry.md and docs/reference/known-issues.md
+Read knowledge/SKILL.md, docs/reference/telemetry.md and docs/reference/known-issues.md
 in the Pika SDK at [SDK path]. This is the serial log of [game] on a robot:
 [paste every game.* line of the session, from game.start to game.stop]
 What I did: [e.g. three rounds, one wrong answer each, then HOME].
@@ -116,9 +116,9 @@ prompt A's checks (budget, voice fallback) before final art.
 Build a first playable game for the PIKA robot, as fast as possible.
 
 Rules:
-- Read skill/SKILL.md first and follow its routing. Only use names from
+- Read knowledge/SKILL.md first and follow its routing. Only use names from
   contract/api.json; a name that is not there does not exist on the robot.
-- Lua directly, no browser demo. Start from skill/templates/structured-game: copy
+- Lua directly, no browser demo. Start from starters/structured-game: copy
   everything except README.md to games/[game_id]/ (do not edit the template). Reuse
   libraries/ modules instead of writing your own.
 - Placeholder art only: Sprite.solid blocks and Text labels. No image files yet.

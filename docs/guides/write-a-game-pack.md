@@ -15,11 +15,11 @@ Copy the closest starting point instead of a blank folder:
 
 | Start from | When |
 | --- | --- |
-| `skill/templates/minimal-game/` | one screen, a few objects |
-| `skill/templates/structured-game/` | several scenes, rules split from wiring, a leaderboard |
-| an example in `examples/` | the same engine area (`test_button`, `test_font`, `test_audio`, `test_voice`, `pick_word`) |
+| `starters/minimal-game/` | one screen, a few objects |
+| `starters/structured-game/` | several scenes, rules split from wiring, a leaderboard |
+| an example in `test-packs/` | how one engine area behaves on the robot (`test_<global>`: `test_input`, `test_speaker`, `test_text`, `test_voice`, `test_engine`, ...) |
 
-Reuse `libraries/` (state machine, tweens, easing, UI selector, settings screen, utils):
+Reuse `libraries/` (state machine, tweens, easing, UI selector, settings screen, telemetry wrapper, utils):
 copy a module and its dependencies into your pack's `libs/` and `require("libs/<name>")`.
 
 ## A minimal pack
@@ -79,7 +79,7 @@ end
    every wait has a `Timer.millis()` timeout.
 9. **Nothing heavy per frame.** Load assets in `game_start` or on a scene change, spread big
    loads over several frames, and change engine state only when it changed. The cost model
-   and patterns are in [skill/performance.md](../../skill/performance.md).
+   and patterns are in [knowledge/performance.md](../../knowledge/performance.md).
 
 ## Check it
 

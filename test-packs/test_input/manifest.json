@@ -1,0 +1,14 @@
+{
+  "name": {"vi": "Kiểm tra nút bấm", "en": "Input Test"},
+  "version": "1.0.0",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button"],
+  "input": {
+    "actions": {
+      "enter": ["button:enter"],
+      "left":  ["button:left"],
+      "right": ["button:right"]
+    }
+  }
+}

@@ -10,7 +10,7 @@ Firmware behaviour that is surprising or wrong today. Game code must work around
 - **Behaviour:** `spr:set_frame` loads the frame unflipped but keeps the recorded flip state, and `spr:set_flip` only acts when the requested state differs from the recorded one. After `set_frame`, calling `set_flip` with the same values does nothing, so the frame stays unflipped.
 - **Do:** Do not flip sprites that use `set_frame`: ship pre-flipped frames in the strip. If you must: call `set_flip(false, false)` **before** each `set_frame`, then `set_flip` with the wanted state after it.
 - **Status:** confirmed in code
-- **Source:** `render/lvgl_renderer.c:952-979`, `render/lvgl_renderer.c:1069`
+- **Source:** `render/lvgl_renderer.c:1223-1294`, `render/lvgl_renderer.c:1096-1134`
 
 <a id="ki-dt-nominal"></a>
 ## KI-DT-NOMINAL: `dt_ms` is 33 but frames are 30 ms apart
@@ -18,7 +18,7 @@ Firmware behaviour that is surprising or wrong today. Game code must work around
 - **Behaviour:** The frame period rounds to 30 ms (RTOS tick 10 ms) while `on_tick` always receives 33. Summing `dt_ms` runs about 10% fast on time and drifts whenever frames are late.
 - **Do:** Drive every timer and movement from `Timer.millis()` differences.
 - **Status:** confirmed in code; robot logs never show tick_hz above 33
-- **Source:** `core/engine_core.c:1010`, `core/engine_core.c:1330`, `head_esp32/sdkconfig:CONFIG_FREERTOS_HZ`
+- **Source:** `core/engine_core.c:1287`, `core/engine_core.c:1633`, `head_esp32/sdkconfig:CONFIG_FREERTOS_HZ`
 
 <a id="ki-oom-edge"></a>
 ## KI-OOM-EDGE: Near the heap limit a game may be tagged OOM
@@ -26,7 +26,7 @@ Firmware behaviour that is surprising or wrong today. Game code must work around
 - **Behaviour:** The allocator records an OOM error before Lua's emergency garbage collection retries the allocation. A game whose heap, garbage included, touches 512 KiB pays a full-GC hitch and can end with `err=OOM` even though the retry could have succeeded.
 - **Do:** Keep peak heap well below the limit: allocate once, reuse tables, avoid building strings every frame. Watch `arena` in `game.running` and `arena_pk` in `game.stop`.
 - **Status:** from code reading, not reproduced on a robot
-- **Source:** `core/lua_vm.c:173-181`
+- **Source:** `core/lua_vm.c:171-179`
 
 <a id="ki-millis-wrap"></a>
 ## KI-MILLIS-WRAP: `Timer.millis()` turns negative after about 24.8 days
@@ -34,7 +34,7 @@ Firmware behaviour that is surprising or wrong today. Game code must work around
 - **Behaviour:** Integers are 32-bit; uptime in milliseconds overflows after 2^31 ms. A firmware comment claims 49.7 days; that figure is for unsigned 32-bit.
 - **Do:** Compare differences (`Timer.millis() - t0`), which stay correct across the wrap.
 - **Status:** confirmed in code
-- **Source:** `bindings/bind_engine.c:146`, `head_esp32/components/lua-5.5.0/CMakeLists.txt:38`
+- **Source:** `bindings/bind_engine.c:157-165`, `head_esp32/components/lua-5.5.0/CMakeLists.txt:38`
 
 <a id="ki-first-running"></a>
 ## KI-FIRST-RUNNING: The first `game.running` line covers one frame
@@ -42,7 +42,31 @@ Firmware behaviour that is surprising or wrong today. Game code must work around
 - **Behaviour:** The telemetry window starts at the first tick, so the first `game.running` line is printed at `t=0` with a meaningless `tick_hz` (often single digits).
 - **Do:** Ignore the first `game.running` line of a session.
 - **Status:** confirmed in code and robot logs
-- **Source:** `core/engine_core.c:785`
+- **Source:** `core/engine_core.c:998-1010`
+
+<a id="ki-sound-queue"></a>
+## KI-SOUND-QUEUE: A new `Speaker.play` does not cut the playing game sound
+
+- **Behaviour:** Every game play has the same priority, and the robot's audio engine queues a new play behind the one playing instead of replacing it. The engine still reports the old alias `REASON_PREEMPTED` and makes the new one current, so `Speaker.is_playing` is wrong until the old clip ends, and several quick plays all play, oldest first. A looping sound stops looping after its current pass, then the new sound plays.
+- **Do:** Call `Speaker.stop(current)` before `Speaker.play(next)`, in the same frame.
+- **Status:** confirmed in code and on a robot
+- **Source:** `head_esp32/components/game_engine/host/sound_bridge.cpp:95-103`, `head_esp32/main/src/middleware/audio/audio_priority_queue.cpp:367-375`, `head_esp32/main/src/middleware/audio/audio_manager.cpp:831-855`, `subsystems/sound/sound.c:445-456`
+
+<a id="ki-stopall-play"></a>
+## KI-STOPALL-PLAY: `stop_all` then `play` in one frame silences the new sound
+
+- **Behaviour:** `Speaker.stop_all` is sent at the end of the frame, after `on_tick`, so it also cancels a `Speaker.play` made later in the same frame. That sound never fires `on_sound_end`, and `Speaker.is_playing` stays `true` for it until the next play or stop.
+- **Do:** Use `Speaker.stop(alias)` to cut one sound, or play on the frame after `stop_all`.
+- **Status:** confirmed in code, not yet seen on a robot
+- **Source:** `subsystems/sound/sound.c:509-531`, `subsystems/sound/sound.c:889-913`, `core/engine_core.c:1659`, `head_esp32/components/game_engine/host/sound_bridge.cpp:186-193`
+
+<a id="ki-sound-cut"></a>
+## KI-SOUND-CUT: A sound cut by the robot gets no `on_sound_end`
+
+- **Behaviour:** Only sounds that finish, fail, or are stopped or replaced by the game report `on_sound_end`. A game sound cut by the robot (a system stop, urgent robot audio, a full robot audio queue) gets no event, and `Speaker.is_playing` stays `true`.
+- **Do:** Keep a `Timer.millis()` deadline on every wait for `on_sound_end`; call `Speaker.stop` before relying on `is_playing`.
+- **Status:** confirmed in code, not yet seen on a robot
+- **Source:** `head_esp32/main/src/middleware/audio/audio_manager.cpp:1198-1200`, `head_esp32/main/src/middleware/audio/audio_manager.cpp:903-929`, `head_esp32/components/game_engine/host/sound_bridge.cpp:186-202`
 
 <a id="pc-vs-robot"></a>
 ## PC vs robot
@@ -56,7 +80,9 @@ Where the PC tools (`tools/smoke.py`, the browser kit, Pika Studio) behave diffe
 | PC-SPEED | Speed and timing | 30 ms frames; SD reads and decodes block the frame | a desktop CPU; nothing measures robot cost | Only robot telemetry proves performance ([Telemetry](telemetry.md)). |
 | PC-VOICE | Voice | keywords sent from `game_start` are dropped; real server | smoke.py flags voice calls in `game_start`; Studio uses its own voice server settings | Send keywords from `on_tick`; test voice on a robot. |
 | PC-PNG-COST | Opaque PNG memory | `w*h*2` for a PNG without alpha | the browser kit counts every `Sprite.image` at `w*h*3` | Trust smoke.py's figure (it reads the PNG header); the kit over-estimates. |
-| PC-STRIP | Frame strips | `set_frame` works on any sprite whose strip matches its own format | the browser kit supports `set_frame` only on `Sprite.new` `.rgb565` sprites | Use `.rgb565` strips; the kit rule is a simplification, not an engine limit. |
+| PC-STRIP | Frame strips | `set_frame` works on `Sprite.new`, `Sprite.solid` and opaque-PNG sprites; an alpha PNG sprite is refused | the browser kit supports `set_frame` only on `Sprite.new` `.rgb565` sprites | Use `.rgb565` strips; the kit rule is a simplification, not an engine limit. |
 | PC-ROOT-LEN | Games folder path length | packs live under `/sd/games`, so full paths stay short | Pika Studio builds `<games folder>/<game_id>/<path>` into the engine's 160-byte sound path buffer; a long games folder fails the pack at load (`sound '<alias>': bad absolute path`, `game.error code=PACK_MANIFEST`) although it runs on the robot | Keep the games folder path at most 63 characters (e.g. `E:/pika-games`); `tools/smoke.py` warns `PC-ROOT-LEN` for the folder the pack is in. |
-| PC-HOME | HOME, LED, servos | real hardware; HOME held ≥ 1500 ms force-exits | simulated or absent | Check them in the release checklist on a robot. |
+| PC-HOME | HOME, LED, servos | real hardware; HOME held ≥ 1500 ms or ON/OFF ends the game; HOME in talk-flow skips `on_home` | simulated or absent | Check them in the release checklist on a robot. |
+| PC-SOUND | Sound timing | a new play queues behind the playing clip; `stop_all` is sent at frame end; volume is real | smoke.py and the kit swap sounds instantly; `get_volume` is always 80; the kit fires `REASON_COMPLETED` on loops and plays a `remote` alias before `set_url` | Check sound order and loops on a robot; stop the current sound before playing the next. |
+| PC-STUB | What the PC tools simplify | a button bound to several actions fires `on_input` for each; `Input.actions()` keeps manifest order; Sprite, Text, Shape and Anim handles are userdata; servo rejects from the body board (duty limit, refused gesture) show in `Servo.stats().back_reject_*`; `Ranking.get_result` answers from the server; sounds, LEDs and servos act and can fail | smoke.py keeps one action per button, sorts `Input.actions()`, hands out tables as handles, never rejects a servo command on the body side, never returns a ranking result, and keeps the Speaker error/drop counters and the LED/servo send-fail counters at 0 | Do not rely on these orders, handle types or counters without a robot run. |
 | PC-SJSON | Checksums | refuses files that do not match `s.json` | nothing checks `s.json` | Publish through the Pika platform; never edit `s.json`. |

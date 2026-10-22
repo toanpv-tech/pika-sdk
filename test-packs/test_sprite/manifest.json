@@ -1,0 +1,14 @@
+{
+  "name": {"vi": "Kiểm tra sprite", "en": "Sprite Test"},
+  "version": "1.0.0",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button"],
+  "input": {
+    "actions": {
+      "fire": ["button:enter"],
+      "prev": ["button:left"],
+      "next": ["button:right"]
+    }
+  }
+}

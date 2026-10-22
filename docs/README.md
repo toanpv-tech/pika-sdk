@@ -2,7 +2,7 @@
 
 Everything for making educational games for the PIKA robot. New here? Start with
 [Getting started](start/getting-started.md). An AI assistant starts at
-[skill/SKILL.md](../skill/SKILL.md) instead.
+[knowledge/SKILL.md](../knowledge/SKILL.md) instead.
 
 ## Find your page
 
