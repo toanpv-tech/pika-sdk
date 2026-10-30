@@ -75,6 +75,14 @@
       "summary": "Voice keyword spotting: argument and size guards (local), then real sessions: hear a spoken keyword with latency, busy on a second list, no_keywords from Voice.start, clean reopen. Needs a voice server (Pika: Configure Voice ASR Server) or a robot."
     },
     {
+      "dir": "test_game_a2a",
+      "name": "Game A2A Test",
+      "demonstrates": ["pack", "speaker", "voice"],
+      "covers": ["Pack", "on_pack_cmd", "on_voice_event"],
+      "needs": ["robot", "talk-flow", "mock-live-talk"],
+      "summary": "Talk-flow (A2A) game channel: Pack.send limits (op, args size, keys, depth, 5/s rate), Speaker.set_file path rules, Pack.data(game) and params.preload shape, one on_pack_cmd{op=preload} per background file, Pack.preload_state (ready/failed/pending, \"none\" for unsafe paths and a bare preload/, agrees with params.preload and the pushes), AGENT_AUDIO ready -> Speaker.play_stream -> end with Voice.stop/start around it, hello with exponential backoff. Colour-coded rows, the current wait with its deadline and the last events on screen. Reads params.params.scn and asks a bench mock of the conversation server to run that scenario; every wait has a deadline so it also runs on the real backend."
+    },
+    {
       "dir": "test_telemetry",
       "name": "Telemetry Test",
       "demonstrates": ["telemetry"],

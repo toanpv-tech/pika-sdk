@@ -15,6 +15,7 @@ Globals: `Engine` `Timer` `print` `Input` `Sprite` `Text` `Shape` `Anim` `Speake
 - **Handles.** `Sprite`, `Text`, `Shape` and `Anim` are userdata; call methods with a colon (`spr:set_pos(x, y)`). `:destroy()` is idempotent; after it every method is a no-op (getters return zeros, boolean methods `false`). Text and Shape no-ops log a warning; Sprite and Anim no-ops are silent.
 - **Keep a reference to every handle.** Handles have `__gc`: a Sprite, Text, Shape or Anim that no Lua variable references is destroyed at the next garbage collection and disappears from the screen. A dropped Text or Shape keeps its pool slot until then. Handles also support `<close>`. Everything is freed when the game ends.
 - **Paths** are relative to the pack folder. The engine prefixes `<pack root>/<game_id>/` (`/sd/games`, or `/sd/to-do` for built-in activity packs); the whole path must stay under 200 bytes, so a relative path may use at most 188 bytes minus the length of the game id. An absolute path, a backslash, a control character, or an empty, `.` or `..` segment (`a//b`, trailing `/`) raises `unsafe ... path`.
+- **Preload files.** A talk-flow game may also name files the conversation server downloads for it with `GAME_START`: `preload/<file>` maps to the game's preload folder outside the pack, with the same path rules (a bare `preload/` is refused). `Sprite.image`, `Sprite.new`, `spr:set_frame`, `Anim.new`, `Text:set_font`, `Speaker.set_file` and a manifest sound `path` accept it. A file that has not arrived yet is not an API failure: `Sprite.image` returns `nil, msg` (`ESP_ERR_NOT_FOUND`), `Speaker.set_file` returns `false`, and the manifest does not check that a `preload/` sound exists when the pack loads. Read `params.preload` in `game_start`, react to `on_pack_cmd{op = "preload"}`, and ask `Pack.preload_state(path)` before using a file that was pending.
 - **Colours.** `Text` and `Shape` take `0xRRGGBB`. `Sprite.solid` takes 16-bit RGB565. Mixing them gives wrong colours, not an error.
 - **Reading an unknown field** of an engine global or handle gives `nil` (feature detection works); calling it raises. `pika` is an empty global table.
 
@@ -43,7 +44,7 @@ Define hooks as globals in the entry script; all are optional. Each call runs un
 - `dt_ms` is always 33 (1000 / 30), not the measured frame time.
 - The frame period is 30 ms: the RTOS tick is 10 ms, so the 33 ms target rounds down to whole ticks. That caps the loop at about 33 frames per second. A game that adds `dt_ms` every frame therefore runs about 10% fast when frames are on time and slow when they are late. **Use `Timer.millis()` for anything time-based.**
 
-`params`: `is_a2a` (boolean): `true` when the game was started from a conversation: a talk-flow (A2A) session or the to-do journey.; `language` (string): ISO 639-1 code of the robot's UI language, e.g. `"en"`.; `other fields` (any): Start parameters from the server, decoded from JSON: at most 127 bytes and 32 nodes. Longer, malformed or non-object parameters give an empty table plus the two fields above.
+`params`: `is_a2a` (boolean): `true` when the game was started from a conversation: a talk-flow (A2A) session or the to-do journey.; `language` (string): ISO 639-1 code of the robot's UI language, e.g. `"en"`.; `preload` (table or absent): Only for a talk-flow launch (a server `GAME_START`, also inside the to-do journey) that carried a preload plan: `{ready = {...}, failed = {...}, pending = {...}}`, each entry a `preload/<rel>` path (at most 24 paths, 32 nodes in all; all three empty when the plan was not parsed yet). Each file still pending at start arrives once as `on_pack_cmd{op = "preload", path = ..., ok = ...}`; files already in `ready` / `failed` are not pushed again. Menu and MQTT launches never have it. `Pack.preload_state(path)` answers at any time.; `other fields` (any): Start parameters from the server, decoded from JSON: at most 127 bytes and 32 nodes. Longer, malformed or non-object parameters give an empty table plus the two fields above.
 
 ## Engine
 
@@ -182,12 +183,14 @@ Sounds are aliases declared in `manifest.json` (`audio.sounds`). There is **one 
 
 | Call | Returns | On failure | Notes |
 | --- | --- | --- | --- |
-| `Speaker.play(alias)` | boolean | `false`; `false`: unknown alias, remote alias without a URL yet, within 150 ms of the previous play (`cooldown_reject`), or audio request refused | The automatic restart of a looping sound counts as a play for the cooldown. |
+| `Speaker.play(alias)` | boolean | `false`; `false`: unknown alias, remote alias without a URL yet, within 150 ms of the previous play (`cooldown_reject`), while agent speech started by `Speaker.play_stream` plays (not counted as an API failure), or audio request refused | The automatic restart of a looping sound counts as a play for the cooldown. |
 | `Speaker.stop(alias)` | boolean | `false`; `false` if `alias` is not the sound currently playing | `on_sound_end(alias, Speaker.REASON_STOPPED)` arrives at the start of the **next** frame, also when called from inside `on_sound_end`. |
-| `Speaker.stop_all()` | `true` | — | Stops all game sounds, playing and queued; robot audio is not affected. |
+| `Speaker.stop_all()` | `true` | — | Stops all game sounds, playing and queued; robot audio and agent speech started by `Speaker.play_stream` are not affected. |
 | `Speaker.is_playing(alias)` | boolean | `false` | `true` while `alias` is the current game sound, by engine bookkeeping, not a hardware signal: already `true` while the clip waits in the queue, and still `true` if the robot cuts the sound. |
 | `Speaker.is_busy()` | boolean | — | `true` while any audio request is active (robot audio included). |
 | `Speaker.set_url(alias, url)` | boolean | `false`; `false` for a `path` alias, an undeclared alias, a non-string argument or a bad URL | Sets or overrides the URL of an alias declared with `"remote": true` or `"url"`. |
+| `Speaker.play_stream()` | boolean | `false`; `false`, never raises, checked in this order: not a talk-flow game (`not_talk_flow`); during the exit defer or inside `game_end` (`exiting`); robot audio not running (`audio_down`); a previous stream still plays or its `end` was not delivered yet (`stream_playing`). Only `audio_down` counts as an API failure. | Talk-flow games only (`params.is_a2a`, the to-do journey included). |
+| `Speaker.set_file(alias, path)` | boolean | `false`; `false`: a non-string argument, no game running, an undeclared alias, an SD sound (`path`) alias, an unsafe or too long path, or a file that is not there yet | Points an alias declared with `"remote": true` or `"url"` at a file on the SD card, usually `preload/<name>` (or a path inside the pack); `Speaker.play(alias)` then plays it with the usual `on_sound_end`. |
 | `Speaker.set_volume(pct)` | nothing | no-op on non-number | 0..100, rounded and clamped. |
 | `Speaker.get_volume()` | integer | — | The volume set by the game this session, else the user's saved volume. |
 | `Speaker.stats()` | table | — | `{played_total, finish_dropped, error_count, cooldown_reject, no_hookup, speaker_abandoned_current, speaker_abandoned_peak}`. |
@@ -236,7 +239,7 @@ English keyword spotting: the game sends a short list of command words, the robo
 | `Voice.stop()` | `true` | — | Stops listening and closes the session. |
 | `Voice.is_available()` | boolean | — | `true` while the game is running (`false` during the top level and `game_start`). |
 
-Each voice frame arrives as `on_voice_event(e)`, decoded from JSON into a table (arrays 1-based, `null` becomes absent). A frame that is not valid JSON or exceeds 8 levels or 256 nodes arrives as the raw string, so check `type(e)`.
+Each voice frame arrives as `on_voice_event(e)`, decoded from JSON into a table (arrays 1-based, `null` becomes absent). A frame that is not valid JSON, exceeds 8 levels or 256 nodes, or nests deeper than 16 levels (then it is not parsed at all) arrives as the raw string, so check `type(e)`.
 
 | Frame | Meaning |
 | --- | --- |
@@ -244,6 +247,8 @@ Each voice frame arrives as `on_voice_event(e)`, decoded from JSON into a table 
 | `e.type == "VOICE_COMMAND"`, `e.data.status == "keywords_configured"` | The server loaded the list: `e.data.accepted` will trigger, `e.data.rejected` never will. Not a command. *Seen in robot logs; the robot passes server frames through unchanged.* |
 | `e.type == "VOICE_COMMAND"`, `e.data.status == "unavailable"` | Keyword spotting is down on the server: hide voice hints, keep playing on buttons. |
 | `e.type == "error"`, `e.code`, `e.message` | Generated by the robot. `e.code` is one of the codes below. |
+| `e.type == "AGENT_AUDIO"`, `e.data.event == "ready"`, `e.data.bytes` | Talk-flow games only, generated by the body board: the agent's reply is buffered on the head. Call `Voice.stop()` then `Speaker.play_stream()` to play it. |
+| `e.type == "AGENT_AUDIO"`, `e.data.event == "end"`, `e.data.ms`, `e.data.reason` | Generated by the head after `Speaker.play_stream`: the stream ended. `ms` since the call; `reason` is `drained`, `stopped`, `stale` or `leave` (see `Speaker.play_stream`). Call `Voice.start()` here. One `end` per accepted `play_stream`, unless the game is exiting. |
 
 | `e.code` | Cause | Game |
 | --- | --- | --- |
@@ -286,11 +291,13 @@ Leaderboard of the robot game platform. Lua cannot write files; this is the only
 
 ## Pack
 
-**Internal, not for game code.** Documents the body board publishes for built-in packs (e.g. the to-do journey). The head keeps them across games and restarts of the Lua VM; they are lost when the head reboots and sent again by the body board.
+**Built-in and talk-flow packs only.** Documents the body board publishes for built-in packs (e.g. the to-do journey) and for games the conversation server launches (its `GAME_START` `data` is published as key `"game"`), plus the upstream channel `Pack.send` to that server and `Pack.preload_state` for the files that server preloads. The head keeps documents across games and restarts of the Lua VM; they are lost when the head reboots and sent again by the body board.
 
 | Call | Returns | On failure | Notes |
 | --- | --- | --- | --- |
-| `Pack.data(key)` | table or nil | raises when `key` is not a string; `nil` when the document was not published yet, does not parse, or exceeds its node budget | Decoded once per version and cached: every call returns the **same** table, so treat it as read-only. |
+| `Pack.data(key)` | table or nil | raises when `key` is not a string or number; `nil` when the document was not published yet or was deleted (the body board publishes `null`, e.g. for a talk-flow `GAME_START` without `data`), does not parse, nests deeper than 16 levels (then it is not parsed at all), or exceeds 8 levels / 1024 nodes | Decoded once per version and cached: every call returns the **same** table, so treat it as read-only. |
+| `Pack.send(op[, args])` | boolean | raises when `op` is not a string or number (a number is sent as its string); `false`, never raises, checked in this order: `op` empty, over 31 bytes or holding a NUL byte (`bad_op`); not a talk-flow game (`not_talk_flow`); during the exit defer or inside `game_end` (`exiting`); more than 5 sends in any 1000 ms (`rate_limited`); `args` nested deeper than 4 levels below `args` itself, or a table that contains itself (`too_deep`), an object with more than 32 keys (`too_many_keys`), a function, userdata or thread inside (`encode_failed`), or `args` that would print to more than 2048 bytes (`args_too_big`, decided while encoding, so a single string longer than that fails before it is copied); the whole frame over 4096 bytes (`too_big`); `send_failed` | **Talk-flow (A2A) only** (`params.is_a2a`). |
+| `Pack.preload_state(path)` | `"ready"`, `"failed"`, `"pending"` or `"none"` | raises when `path` is not a string or number; `"none"`: no preload plan for this game, a file outside the plan, or a path that does not start with `preload/` or fails the path rules (logged `reason=unsafe_path`) | **Talk-flow only.** State of one file the conversation server preloads for this game (see **Paths** in the conventions). |
 
 ## Telemetry
 

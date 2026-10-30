@@ -8,7 +8,7 @@
 
 - **VOICE-TICK** MUST send keywords from the first `on_tick`, never from the top level or `game_start` — the voice session starts after `game_start` returns and earlier commands are dropped. Check: smoke.py error `VOICE-EARLY`, kit `L-VOICE-EARLY`.
 - **VOICE-ONE** MUST call only `Voice.set_keywords` to start listening — it sends the list and starts; `Voice.start` is not needed (idle → `no_keywords` error).
-- **VOICE-SWAP** MUST swap words with `Voice.stop()` then `Voice.set_keywords(new)` — a second `set_keywords` while active is refused with `busy` and the old list stays ([open-questions.md](../open-questions.md#q-keyword-swap)).
+- **VOICE-SWAP** MUST swap words with `Voice.stop()` then `Voice.set_keywords(new)` — a second `set_keywords` while active is refused with `busy` and the old list stays ([open-questions.md](../open-questions.md#q-keyword-swap)). In talk-flow (`params.is_a2a`) call `Voice.start()` after it: there `Voice.stop()` mutes the microphone and `set_keywords` does not resume it ([q-a2a-swap](../open-questions.md#q-a2a-swap)).
 - **VOICE-CODE** MUST branch on `e.code`: only `connect_failed`, `connect_timeout`, `ws_disconnected`, `ws_error` are fatal, and the robot ends the game for them; the rest continue ([api.md#voice-events](../../docs/reference/api.md#voice-events)).
 - **VOICE-BUTTONS** MUST keep the game finishable with buttons when voice is down.
 - **VOICE-ALIAS** MUST declare every sound alias the handlers play (here `laser`).

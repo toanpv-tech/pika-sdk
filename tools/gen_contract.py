@@ -74,6 +74,10 @@ MACROS = [
     ("voice_event_max_nodes", "bindings/bindings.h", "GAME_VOICE_EVENT_MAX_NODES"),
     ("start_params_max_len", "core/engine_internal.h", "GAME_PARAMS_JSON_FIELD_LEN"),
     ("start_params_max_nodes", "bindings/bindings.h", "GAME_START_PARAMS_MAX_NODES"),
+    ("pack_json_max_nodes", "bindings/bindings.h", "GAME_PACK_JSON_MAX_NODES"),
+    ("pack_send_op_max_len", "bindings/bind_engine.c", "PACK_SEND_OP_MAX_LEN"),
+    ("pack_send_args_max_bytes", "bindings/bind_engine.c", "PACK_SEND_ARGS_MAX_BYTES"),
+    ("pack_send_rate_max", "bindings/bind_engine.c", "PACK_SEND_RATE_MAX"),
     ("report_event_max_len", "bindings/bind_engine.c", "REPORT_EVENT_MAX_LEN"),
     ("line_pool_max_bytes", "render/lvgl_renderer.c", "GAME_LINE_POOL_MAX_BYTES"),
     ("game_id_max_len", "core/engine_internal.h", "GAME_ID_FIELD_LEN"),
@@ -96,6 +100,15 @@ FW_MACROS = [
     ("icon_max_px", "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp", "GRID_ICON_MAX"),
     ("icon_cell_px", "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp", "GRID_ICON_PX"),
     ("rank_result_buf_max", "head_esp32/components/game_engine/include/game_engine_host.h", "RANK_RESULT_BUF_MAX"),
+    # Server JSON (voice / pack frames, pack data, start params) is refused past this nesting.
+    ("json_max_nesting", "head_esp32/components/game_engine/include/game_engine_host.h", "GAME_JSON_MAX_NESTING"),
+    ("game_event_json_max_bytes", "head_esp32/components/game_engine/include/game_engine_host.h", "GAME_EVENT_JSON_MAX_BYTES"),
+    # A Speaker.play_stream whose end never came is declared stale after this long.
+    ("stream_stale_ms", "head_esp32/components/game_engine/host/sound_bridge.cpp", "STREAM_PLAY_STALE_MS"),
+    # Files a talk-flow GAME_START may preload; params.preload lists at most this many paths.
+    ("preload_max_items", "head_esp32/components/game_engine/include/game_engine_host.h", "GAME_PRELOAD_MAX_ITEMS"),
+    # Pack.data documents the head keeps; one more key evicts the oldest.
+    ("pack_data_slots", "head_esp32/main/src/middleware/ipc/ipc.h", "PACK_DATA_SLOTS"),
     # The body board clamps and throttles every game servo command.
     ("servo_head_min_deg", "back_esp32/main/src/configs/configs.h", "SERVO_HEAD_MIN_DEG"),
     ("servo_head_max_deg", "back_esp32/main/src/configs/configs.h", "SERVO_HEAD_MAX_DEG"),
@@ -119,6 +132,16 @@ FW_REGEX = [
      r"#define\s+ENGINE_SHOW_HOLD_MAX_US\s+\((\d+)LL\s*\*\s*1000000LL\)"),
     ("exit_defer_ms", "head_esp32/components/game_engine/src/core/engine_core.c",
      r"#define\s+ENGINE_EXIT_DEFER_MAX_US\s+(\d+)000LL"),
+    ("pack_send_rate_window_ms", "head_esp32/components/game_engine/src/bindings/bind_engine.c",
+     r"#define\s+PACK_SEND_RATE_WINDOW_US\s+(\d+)000LL"),
+    ("ipc_blob_max_bytes", "head_esp32/main/src/middleware/ipc/ipc.h", r"#define\s+IPC_BLOB_MAX_LEN\s+(\d+)"),
+    ("pack_data_hdr_bytes", "head_esp32/main/src/middleware/ipc/ipc.h",
+     r"static_assert\(sizeof\(PackDataHdr_st\)\s*==\s*(\d+)"),
+    ("preload_params_extra_nodes", "head_esp32/components/game_engine/src/core/lua_vm.c",
+     r"#define\s+GAME_PRELOAD_PARAMS_MAX_NODES\s+\(\(int\)GAME_PRELOAD_MAX_ITEMS\s*\+\s*(\d+)\)"),
+    # Agent speech of a talk-flow game waits in this head ring until Speaker.play_stream.
+    ("agent_stream_ring_kib", "head_esp32/main/src/driver/audio/speaker.cpp",
+     r"FREETALK_RINGBUF_SIZE\s*=\s*\(\s*(\d+)U\s*\*\s*1024U\s*\)"),
 ]
 
 # Button auto-repeat is timed by the body board and forwarded as Input.REPEAT events.
@@ -182,9 +205,11 @@ FACTS = {
 }
 
 # Registered for firmware-internal hosts; documented but not for game code.
-INTERNAL = {"on_pack_cmd": "host command channel of built-in packs",
+INTERNAL = {"on_pack_cmd": "host command channel of built-in and talk-flow packs",
             "on_pack_data": "pack data store channel of built-in packs",
             "Pack.data": "pack data store channel of built-in packs",
+            "Pack.send": "game event uplink to the conversation server (talk-flow packs)",
+            "Pack.preload_state": "state of a file the conversation server preloads for a talk-flow pack",
             "Engine.stack_hwm": "firmware stack sizing probe"}
 A2A_ONLY = {"Engine.report_result": "talk-flow (A2A) sessions: reports the outcome string to the server"}
 
@@ -239,7 +264,9 @@ def parse_bindings(src):
         for m in re.finditer(r'luaL_newlib\(L,\s*(\w+)\);(?:(?!luaL_newlib).)*?lua_setglobal\(L,\s*"(\w+)"\)', text, re.S):
             table, glob = m.group(1), m.group(2)
             g = api.setdefault(glob, {"functions": [], "methods": [], "constants": []})
-            names = tables.get(table, [])
+            # A function with an upvalue is registered as a closure after the table (Pack.send).
+            names = tables.get(table, []) + re.findall(
+                r'lua_pushcclosure\(L,\s*l_\w+,\s*\d+\);\s*lua_setfield\(L,\s*-2,\s*"([a-z_]+)"\)', m.group(0))
             fac = FACTORIES.get(glob)
             if fac:
                 g["functions"] += [n for n in names if n in fac]
@@ -316,6 +343,12 @@ def derive(lim):
                                      "target_fps * telemetry_running_fps_mult"),
         "telemetry_slow_frame_ms": (lim["telemetry_slow_frame_us"] // 1000, "telemetry_slow_frame_us in ms"),
         "lua_heap_bytes": (lim["lua_heap_kb"] * 1024, "lua_heap_kb * 1024"),
+        "stream_stale_s": (lim["stream_stale_ms"] // 1000, "stream_stale_ms in s"),
+        "pack_data_max_bytes": (lim["ipc_blob_max_bytes"] - lim["pack_data_hdr_bytes"],
+                                "PACK_DATA_MAX_LEN = IPC_BLOB_MAX_LEN - sizeof(PackDataHdr_st)"),
+        "preload_params_max_nodes": (lim["preload_max_items"] + lim["preload_params_extra_nodes"],
+                                     "GAME_PRELOAD_PARAMS_MAX_NODES = GAME_PRELOAD_MAX_ITEMS + extra"),
+        "agent_stream_ring_mib": (lim["agent_stream_ring_kib"] // 1024, "agent_stream_ring_kib in MiB"),
     }
     return {k: v for k, (v, _) in d.items()}, {k: f for k, (_, f) in d.items()}
 

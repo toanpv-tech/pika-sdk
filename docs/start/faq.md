@@ -105,8 +105,6 @@ A short press calls `on_home()`; return a truthy value to keep the game, for exa
 pause screen. Holding HOME for (`home_force_exit_ms` = 1500) always exits:
 [Hooks](../reference/api.md#hooks). In a talk-flow game HOME ends the game without calling
 `on_home()`. The ON/OFF button always ends the game, whatever `on_home` returns, and the robot
-goes to sleep; `game_end()` still runs. In a talk-flow game HOME ends the game without calling
-`on_home()`. The ON/OFF button always ends the game, whatever `on_home` returns, and the robot
 goes to sleep; `game_end()` still runs.
 
 ## Graphics

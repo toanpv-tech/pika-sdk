@@ -1,0 +1,21 @@
+{
+  "name": {"vi": "Kiểm tra game A2A", "en": "Game A2A Test"},
+  "version": "1.2.2",
+  "author": "Pika SDK",
+  "main": "scripts/main.lua",
+  "peripherals": ["display", "button", "audio", "voice"],
+  "input": {
+    "actions": {
+      "fire": ["button:enter"],
+      "prev": ["button:left"],
+      "next": ["button:right"]
+    }
+  },
+  "audio": {
+    "sounds": {
+      "sfx":        {"path": "assets/audio/sfx.wav"},
+      "sd_only":    {"path": "assets/audio/sfx.wav"},
+      "agent_clip": {"remote": true}
+    }
+  }
+}

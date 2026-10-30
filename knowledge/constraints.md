@@ -37,6 +37,13 @@ Every value is generated from `contract/constraints.json` (key column).
 | LED blink / pulse | 333–5000 ms / 100–5000 ms | `false` (rejected, not clamped) | `led_*` |
 | Voice keywords / body | ≤ 64 / ≤ 2047 bytes | nil, reason | `voice_keywords_max, voice_start_json_max_bytes` |
 | Voice event decode | depth ≤ 8, ≤ 256 nodes | hook receives the raw string | `voice_event_*` |
+| Pack command / data decode | depth ≤ 8, ≤ 1024 nodes | `on_pack_cmd` receives the raw string; `Pack.data` → `nil` | `voice_event_max_depth, pack_json_max_nodes` |
+| Server JSON nesting | ≤ 16 levels | not parsed: raw string / `nil` / empty `params` | `json_max_nesting` |
+| `Pack.send` | `op` ≤ 31 bytes; `args` ≤ 2048 bytes, ≤ 4 levels, ≤ 32 keys per object; frame ≤ 4096 bytes; ≤ 5 sends per 1000 ms | `false` (`bad_op` / `too_deep` / `too_many_keys` / `args_too_big` / `too_big` / `rate_limited`) | `pack_send_*, voice_table_max_depth, voice_table_max_keys, game_event_json_max_bytes` |
+| Agent stream stale | 120 s without an end | `AGENT_AUDIO` `end` with `reason = "stale"` at the next frame; the audio is not stopped | `stream_stale_ms` |
+| `Pack.data` document | ≤ 24555 bytes of JSON, 3 keys on the head | not published (`Pack.data("game")` → `nil`); a new key evicts the oldest | `pack_data_max_bytes, pack_data_slots` |
+| Agent speech buffer | 1 MiB | later speech is dropped (`held_ring_full`) | `agent_stream_ring_kib` |
+| `params.preload` | ≤ 24 paths, 32 nodes | `params.preload` is `nil` | `preload_max_items, preload_params_max_nodes` |
 | Start params | ≤ 127 bytes, ≤ 32 nodes | `game_start` gets an empty table | `start_params_*` |
 
 ## Facts that shape designs

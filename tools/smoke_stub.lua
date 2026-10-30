@@ -592,6 +592,17 @@ local Speaker = closed("Speaker", {
     S.urls[alias] = url
     return true
   end,
+  -- The PC has no preload folder: a "preload/..." file is never there yet (bind_speaker.c).
+  set_file = function(alias, path)
+    local def = sounds[alias]
+    if not def or not (def.remote == true or type(def.url) == "string") then return false end
+    if type(path) ~= "string" or not safe_rel(path) or #path > LIM.sound_path_len_max - 1 then return false end
+    if path:sub(1, 8) == "preload/" or not H.file_size(path) then return false end
+    S.urls[alias] = path
+    return true
+  end,
+  -- A smoke run is never a talk-flow launch (params.is_a2a = false): not_talk_flow.
+  play_stream = function() return false end,
   -- Nothing is decoded on the PC: error, drop, hookup and abandon counters stay 0.
   stats = function()
     return { played_total = S.snd.played, finish_dropped = 0, error_count = 0, cooldown_reject = S.snd.cooldown,
@@ -835,11 +846,20 @@ local Engine = closed("Engine", {
   end,
 })
 local Timer = closed("Timer", { millis = function() return S.now end })
--- Pack data store: no body board on the PC, so nothing is ever published.
+-- Pack data store: no body board on the PC, so nothing is ever published, and a
+-- smoke run is never a talk-flow launch, so Pack.send refuses and nothing is preloaded.
 local Pack = closed("Pack", {
   data = function(key)
-    if type(key) ~= "string" then error("bad argument #1 to 'data' (string expected)", 2) end
+    str_arg(key, "data", 1)
     return nil
+  end,
+  send = function(op)
+    str_arg(op, "send", 1)
+    return false
+  end,
+  preload_state = function(path)
+    str_arg(path, "preload_state", 1)
+    return "none"
   end,
 })
 

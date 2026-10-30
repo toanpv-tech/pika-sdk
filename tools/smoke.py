@@ -165,7 +165,8 @@ def lint(pack, man, api, lim, rt, rep):
         if len(srcs) != 1:
             rep.add("error", "MANIFEST", "sound '%s' needs exactly one of path/url/remote" % alias)
         p = d.get("path")
-        if isinstance(p, str) and not os.path.isfile(os.path.join(pack, p)):
+        # sound.c skips the load-time stat for "preload/..." (the file may still be downloading).
+        if isinstance(p, str) and not p.startswith("preload/") and not os.path.isfile(os.path.join(pack, p)):
             rep.add("error", "MANIFEST", "sound '%s': %s not found (the robot rejects the whole pack)" % (alias, p))
         # PC-ROOT-LEN: Pika Studio joins <games folder>/<game_id>/<path> into a fixed buffer.
         if isinstance(p, str) and len((pack + "/" + p).encode("utf-8")) >= lim["sound_abs_path_max"]:

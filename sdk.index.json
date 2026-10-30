@@ -1,6 +1,6 @@
 {
   "schema": "pika-sdk/1",
-  "sdk_version": "2.0.0",
+  "sdk_version": "2.1.0",
   "name": "Pika SDK",
   "description": "Official toolkit for building PIKA robot games without the robot: engine contract generated from the firmware, browser demo kit, AI skill, docs, Lua libraries, examples and gate tools. Pika Studio loads it through the pika.sdk.source setting. The only proof that it matches a firmware build is tools/gen_contract.py --firmware <checkout> --check.",
   "sections": {

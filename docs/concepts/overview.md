@@ -47,6 +47,7 @@ Both use the same pack and API.
 | `params.is_a2a` | `false` | `true`, plus the server's start parameters |
 | Ends | `Engine.exit()`, HOME when `on_home` does not keep the game, HOME held, or ON/OFF (the robot then sleeps) | `Engine.exit()`, any HOME press (`on_home` is not called) or ON/OFF; the conversation then resumes or asks to pause |
 | Result | `Ranking.report` goes to the leaderboard | `Engine.report_result` goes to the conversation |
+| Server channels | none | `Pack.data("game")`, `Pack.send`, `on_pack_cmd`, preload files, agent speech through `Speaker.play_stream` ([Pack](../reference/api.md#pack)) |
 
 Voice keywords work in both flows for a pack that declares `"voice"`. From the menu the
 robot opens its own voice connection for the game and ends the game if that connection fails

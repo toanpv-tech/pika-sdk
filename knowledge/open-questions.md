@@ -44,11 +44,13 @@ end
 
 - **Known:** in a talk-flow (A2A) session the keyword body is forwarded to the conversation
   (`CONV_NotifyGameKeywords`) and the offline voice session stays idle
-  [fw: back_esp32/main/src/application/game_voice/game_voice.cpp:577-588]. Every list is forwarded with
-  no `busy` check and sent again on the conversation socket [fw: back_esp32/main/src/application/conversation/conversation.cpp:2634-2648];
-  if that socket is down the list is dropped with only a log line, no event. `Voice.stop()` does
-  nothing there. Whether the server replaces the first list with a second one is not settled.
-- **Safe way:** send one list per talk-flow session, or `Voice.stop()` then `set_keywords`, as offline.
+  [fw: back_esp32/main/src/application/game_voice/game_voice.cpp:574-589]. Every list is forwarded with
+  no `busy` check and sent again on the conversation socket [fw: back_esp32/main/src/application/conversation/conversation.cpp:3582-3596];
+  if that socket is down the list is dropped with only a log line, no event. `Voice.stop()` only
+  stops sending the microphone there; the session and the list stay
+  [fw: back_esp32/main/src/application/game_voice/game_voice.cpp:719-725]. Whether the server
+  replaces the first list with a second one is not settled.
+- **Safe way:** send one list per talk-flow session.
 
 <a id="q-publish-names"></a>
 ### q-publish-names · file names at publish time

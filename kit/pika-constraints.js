@@ -40,6 +40,10 @@ window.PIKA_CONSTRAINTS = {
   "voice_event_max_nodes": 256,
   "start_params_max_len": 128,
   "start_params_max_nodes": 32,
+  "pack_json_max_nodes": 1024,
+  "pack_send_op_max_len": 31,
+  "pack_send_args_max_bytes": 2048,
+  "pack_send_rate_max": 5,
   "report_event_max_len": 256,
   "line_pool_max_bytes": 262144,
   "game_id_max_len": 32,
@@ -58,6 +62,11 @@ window.PIKA_CONSTRAINTS = {
   "icon_max_px": 256,
   "icon_cell_px": 64,
   "rank_result_buf_max": 2048,
+  "json_max_nesting": 16,
+  "game_event_json_max_bytes": 4096,
+  "stream_stale_ms": 120000,
+  "preload_max_items": 24,
+  "pack_data_slots": 3,
   "servo_head_min_deg": 60,
   "servo_head_max_deg": 150,
   "servo_base_min_deg": 60,
@@ -75,6 +84,11 @@ window.PIKA_CONSTRAINTS = {
   "button_click_debounce_ms": 300,
   "show_hold_max_s": 3,
   "exit_defer_ms": 1500,
+  "pack_send_rate_window_ms": 1000,
+  "ipc_blob_max_bytes": 24576,
+  "pack_data_hdr_bytes": 21,
+  "preload_params_extra_nodes": 8,
+  "agent_stream_ring_kib": 1024,
   "telemetry_running_s": 30,
   "telemetry_running_fps_mult": 45,
   "telemetry_warn_s": 10,
@@ -132,7 +146,11 @@ window.PIKA_CONSTRAINTS = {
   "icon_max_file_mib": 2,
   "telemetry_running_frames": 1350,
   "telemetry_slow_frame_ms": 34,
-  "lua_heap_bytes": 524288
+  "lua_heap_bytes": 524288,
+  "stream_stale_s": 120,
+  "pack_data_max_bytes": 24555,
+  "preload_params_max_nodes": 32,
+  "agent_stream_ring_mib": 1
  },
  "facts": {
   "screen": [
@@ -203,6 +221,10 @@ window.PIKA_CONSTRAINTS = {
    "voice_event_max_nodes": "game_engine/src/bindings/bindings.h:GAME_VOICE_EVENT_MAX_NODES",
    "start_params_max_len": "game_engine/src/core/engine_internal.h:GAME_PARAMS_JSON_FIELD_LEN",
    "start_params_max_nodes": "game_engine/src/bindings/bindings.h:GAME_START_PARAMS_MAX_NODES",
+   "pack_json_max_nodes": "game_engine/src/bindings/bindings.h:GAME_PACK_JSON_MAX_NODES",
+   "pack_send_op_max_len": "game_engine/src/bindings/bind_engine.c:PACK_SEND_OP_MAX_LEN",
+   "pack_send_args_max_bytes": "game_engine/src/bindings/bind_engine.c:PACK_SEND_ARGS_MAX_BYTES",
+   "pack_send_rate_max": "game_engine/src/bindings/bind_engine.c:PACK_SEND_RATE_MAX",
    "report_event_max_len": "game_engine/src/bindings/bind_engine.c:REPORT_EVENT_MAX_LEN",
    "line_pool_max_bytes": "game_engine/src/render/lvgl_renderer.c:GAME_LINE_POOL_MAX_BYTES",
    "game_id_max_len": "game_engine/src/core/engine_internal.h:GAME_ID_FIELD_LEN",
@@ -221,6 +243,11 @@ window.PIKA_CONSTRAINTS = {
    "icon_max_px": "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp:GRID_ICON_MAX",
    "icon_cell_px": "head_esp32/main/src/middleware/ui_custom/ui_menu.cpp:GRID_ICON_PX",
    "rank_result_buf_max": "head_esp32/components/game_engine/include/game_engine_host.h:RANK_RESULT_BUF_MAX",
+   "json_max_nesting": "head_esp32/components/game_engine/include/game_engine_host.h:GAME_JSON_MAX_NESTING",
+   "game_event_json_max_bytes": "head_esp32/components/game_engine/include/game_engine_host.h:GAME_EVENT_JSON_MAX_BYTES",
+   "stream_stale_ms": "head_esp32/components/game_engine/host/sound_bridge.cpp:STREAM_PLAY_STALE_MS",
+   "preload_max_items": "head_esp32/components/game_engine/include/game_engine_host.h:GAME_PRELOAD_MAX_ITEMS",
+   "pack_data_slots": "head_esp32/main/src/middleware/ipc/ipc.h:PACK_DATA_SLOTS",
    "servo_head_min_deg": "back_esp32/main/src/configs/configs.h:SERVO_HEAD_MIN_DEG",
    "servo_head_max_deg": "back_esp32/main/src/configs/configs.h:SERVO_HEAD_MAX_DEG",
    "servo_base_min_deg": "back_esp32/main/src/configs/configs.h:SERVO_BODY_MIN_DEG",
@@ -248,7 +275,12 @@ window.PIKA_CONSTRAINTS = {
    "servo_duty_cooldown_s": "back_esp32/main/src/configs/configs.h",
    "button_click_debounce_ms": "back_esp32/main/src/driver/button/button.h",
    "show_hold_max_s": "head_esp32/components/game_engine/src/core/engine_core.c",
-   "exit_defer_ms": "head_esp32/components/game_engine/src/core/engine_core.c"
+   "exit_defer_ms": "head_esp32/components/game_engine/src/core/engine_core.c",
+   "pack_send_rate_window_ms": "head_esp32/components/game_engine/src/bindings/bind_engine.c",
+   "ipc_blob_max_bytes": "head_esp32/main/src/middleware/ipc/ipc.h",
+   "pack_data_hdr_bytes": "head_esp32/main/src/middleware/ipc/ipc.h",
+   "preload_params_extra_nodes": "head_esp32/components/game_engine/src/core/lua_vm.c",
+   "agent_stream_ring_kib": "head_esp32/main/src/driver/audio/speaker.cpp"
   },
   "sdkconfig": {
    "target_fps": "CONFIG_GAME_ENGINE_TARGET_FPS",
@@ -305,7 +337,11 @@ window.PIKA_CONSTRAINTS = {
    "icon_max_file_mib": "icon_max_file_bytes in MiB",
    "telemetry_running_frames": "target_fps * telemetry_running_fps_mult",
    "telemetry_slow_frame_ms": "telemetry_slow_frame_us in ms",
-   "lua_heap_bytes": "lua_heap_kb * 1024"
+   "lua_heap_bytes": "lua_heap_kb * 1024",
+   "stream_stale_s": "stream_stale_ms in s",
+   "pack_data_max_bytes": "PACK_DATA_MAX_LEN = IPC_BLOB_MAX_LEN - sizeof(PackDataHdr_st)",
+   "preload_params_max_nodes": "GAME_PRELOAD_PARAMS_MAX_NODES = GAME_PRELOAD_MAX_ITEMS + extra",
+   "agent_stream_ring_mib": "agent_stream_ring_kib in MiB"
   }
  }
 };
@@ -363,7 +399,9 @@ window.PIKA_API = {
   },
   "Pack": {
    "functions": [
-    "data"
+    "data",
+    "preload_state",
+    "send"
    ],
    "methods": [],
    "constants": []
@@ -444,6 +482,8 @@ window.PIKA_API = {
     "is_busy",
     "is_playing",
     "play",
+    "play_stream",
+    "set_file",
     "set_url",
     "set_volume",
     "stats",
@@ -517,9 +557,11 @@ window.PIKA_API = {
   "on_voice_event"
  ],
  "internal": {
-  "on_pack_cmd": "host command channel of built-in packs",
+  "on_pack_cmd": "host command channel of built-in and talk-flow packs",
   "on_pack_data": "pack data store channel of built-in packs",
   "Pack.data": "pack data store channel of built-in packs",
+  "Pack.send": "game event uplink to the conversation server (talk-flow packs)",
+  "Pack.preload_state": "state of a file the conversation server preloads for a talk-flow pack",
   "Engine.stack_hwm": "firmware stack sizing probe"
  },
  "a2a_only": {

@@ -258,7 +258,7 @@ S:async("session", "Voice.start idle -> error no_keywords",
         return { seq = seq, ok = ok, t0 = clock_ms() }
     end,
     function(st)
-        if st.skip then return true, "skip", "Voice.start does nothing in talk-flow" end
+        if st.skip then return true, "skip", "talk-flow: Voice.start resumes the mic, no event" end
         if st.ok ~= true then return true, false, "Voice.start returned " .. tostring(st.ok) end
         for _, e in ipairs(events_after(st.seq)) do
             if e.kind == "error" then

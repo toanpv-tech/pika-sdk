@@ -52,7 +52,9 @@
   },
   "Pack": {
    "functions": [
-    "data"
+    "data",
+    "preload_state",
+    "send"
    ],
    "methods": [],
    "constants": []
@@ -133,6 +135,8 @@
     "is_busy",
     "is_playing",
     "play",
+    "play_stream",
+    "set_file",
     "set_url",
     "set_volume",
     "stats",
@@ -206,9 +210,11 @@
   "on_voice_event"
  ],
  "internal": {
-  "on_pack_cmd": "host command channel of built-in packs",
+  "on_pack_cmd": "host command channel of built-in and talk-flow packs",
   "on_pack_data": "pack data store channel of built-in packs",
   "Pack.data": "pack data store channel of built-in packs",
+  "Pack.send": "game event uplink to the conversation server (talk-flow packs)",
+  "Pack.preload_state": "state of a file the conversation server preloads for a talk-flow pack",
   "Engine.stack_hwm": "firmware stack sizing probe"
  },
  "a2a_only": {

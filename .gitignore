@@ -12,6 +12,7 @@ games/
 
 # Editor settings with machine-specific paths
 .vscode/
+.luarc.json
 
 # Tool installs and playtest output
 tools/node_modules/

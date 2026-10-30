@@ -20,13 +20,14 @@ Entries before 1.2.0 are in Vietnamese.
 
 ---
 
-## Unreleased
+## 2.1.0 — 2026-10-30
 
 Docs re-verified against the firmware on `dev` after audio v2 (3ec73958), `Telemetry.event`
-(9e898fdb) and ON/OFF-in-game (76d5ee41); the SDK becomes a Claude Code plugin marketplace
+(9e898fdb), ON/OFF-in-game (76d5ee41) and game A2A (74938649); the SDK becomes a Claude Code plugin marketplace
 with two plugins and the game agents; `test-packs/` becomes a set of single-feature robot test
 packs, one per public Lua global, and smoke.py models the calls they test the way the firmware
-does. An API, AI tools, examples, a library function, tools and checks were added and
+does. APIs (`Telemetry.event`, the talk-flow `Pack` / `Speaker` calls), AI tools, examples,
+a library function, tools and checks were added and
 docs were corrected to match the engine; no API, hook, manifest key or limit changed or was removed.
 
 ### Added
@@ -107,6 +108,33 @@ docs were corrected to match the engine; no API, hook, manifest key or limit cha
 
 ### Changed
 
+- **Talk-flow (A2A) game channels** (firmware `dev` 74938649): `Pack.send`, `Pack.preload_state`,
+  `Speaker.play_stream` and `Speaker.set_file` are in `contract/api.json` (closure-registered
+  names are read too), documented in [api.md](docs/reference/api.md#pack), and simulated by smoke
+  as a PC run, which is never talk-flow (`false`, `"none"`, no `preload/` file).
+  - `preload/<file>` paths reach the game's preload folder from the image, font and sound calls
+    and a manifest sound `path` (not checked at load); state arrives as `params.preload`,
+    `on_pack_cmd{op = "preload"}` and, authoritatively, `Pack.preload_state`.
+  - During the exit defer and in `game_end`, `Pack.send` and `play_stream` return `false` and
+    `on_voice_event` / `on_pack_cmd` / `on_pack_data` are not called: send the final result
+    before `Engine.exit()`.
+  - `play_stream` has no 30 s cap; its `AGENT_AUDIO` `end` carries `data.reason` (`drained`,
+    `stopped`, `stale` after (`stream_stale_s` = 120) s without stopping the audio, `leave`).
+    `Speaker.stop_all` does not cut the stream; a `Speaker.play` refused meanwhile is not an API
+    failure.
+  - `Pack.send` caps `args` by bytes while encoding (`args_too_big`, no node cap) and refuses a
+    NUL in `op` (`bad_op`) and a self-referencing table (`too_deep`). `Pack.data` takes a number
+    key, returns `nil` for a deleted document and holds (`pack_data_max_bytes` = 24555) bytes in
+    (`pack_data_slots` = 3) keys. Server JSON nested deeper than (`json_max_nesting` = 16) levels
+    is not parsed.
+  - New contract keys: `pack_json_max_nodes`, `pack_send_*`, `json_max_nesting`,
+    `game_event_json_max_bytes`, `stream_stale_*`, `preload_max_items`,
+    `preload_params_max_nodes`, `pack_data_*`, `agent_stream_ring_*`.
+- **Voice in talk-flow** (firmware `back_esp32`, `dev` 74938649): `Voice.stop()` stops sending
+  the microphone and `Voice.start()` resumes it (before, both did nothing and the robot's own
+  voice reached keyword spotting). `set_keywords` does not resume; every game starts listening;
+  each change goes to the server as `{"type":"game_voice","data":{"listening":false|true}}`.
+  Offline voice is unchanged.
 - `skill/` renamed to `knowledge/` so it is not confused with `skills/` (Claude Code
   commands); `sdk.index.json` section `knowledge`. File names inside are unchanged.
 - `AGENTS.md` (with `CLAUDE.md` importing it) at the root: where an AI assistant starts, which

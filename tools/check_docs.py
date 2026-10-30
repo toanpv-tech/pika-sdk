@@ -342,7 +342,7 @@ def check_indexes():
 
     ex = os.path.join(SDK, "test-packs")
     listed = {e["dir"] for e in load("test-packs/examples.index.json")["examples"]}
-    present = {d for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))}
+    present = {d for d in os.listdir(ex) if not d.startswith(".") and os.path.isdir(os.path.join(ex, d))}
     out += ["test-packs/examples.index.json  lists %s, which does not exist" % d for d in sorted(listed - present)]
     out += ["test-packs/%s  is not listed in test-packs/examples.index.json" % d for d in sorted(present - listed)]
     out += check_examples(ex, present)
